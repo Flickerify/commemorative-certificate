@@ -8,7 +8,12 @@
  * @module
  */
 
-import type * as myFunctions from "../myFunctions.js";
+import type * as functions from "../functions.js";
+import type * as users_internal_action from "../users/internal/action.js";
+import type * as users_internal_mutation from "../users/internal/mutation.js";
+import type * as users_internal_query from "../users/internal/query.js";
+import type * as users_query from "../users/query.js";
+import type * as users_utils from "../users/utils.js";
 
 import type {
   ApiFromModules,
@@ -25,7 +30,12 @@ import type {
  * ```
  */
 declare const fullApi: ApiFromModules<{
-  myFunctions: typeof myFunctions;
+  functions: typeof functions;
+  "users/internal/action": typeof users_internal_action;
+  "users/internal/mutation": typeof users_internal_mutation;
+  "users/internal/query": typeof users_internal_query;
+  "users/query": typeof users_query;
+  "users/utils": typeof users_utils;
 }>;
 declare const fullApiWithMounts: typeof fullApi;
 
