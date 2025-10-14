@@ -10,7 +10,7 @@ export const upsertFromWorkos = internalMutation({
       .withIndex('by_external_id', (q) => q.eq('externalId', args.externalId))
       .first();
 
-    if (user === null) {
+    if (!user) {
       return await ctx.db.insert('users', args);
     }
     await ctx.db.patch(user._id, args);

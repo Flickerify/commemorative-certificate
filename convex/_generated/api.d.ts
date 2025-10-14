@@ -231,31 +231,32 @@ export declare const components: {
           };
         }
       >;
-      startStep: FunctionReference<
+      startSteps: FunctionReference<
         "mutation",
         "internal",
         {
           generationNumber: number;
-          name: string;
-          retry?:
-            | boolean
-            | { base: number; initialBackoffMs: number; maxAttempts: number };
-          schedulerOptions?: { runAt?: number } | { runAfter?: number };
-          step: {
-            args: any;
-            argsSize: number;
-            completedAt?: number;
-            functionType: "query" | "mutation" | "action";
-            handle: string;
-            inProgress: boolean;
-            name: string;
-            runResult?:
-              | { kind: "success"; returnValue: any }
-              | { error: string; kind: "failed" }
-              | { kind: "canceled" };
-            startedAt: number;
-            workId?: string;
-          };
+          steps: Array<{
+            retry?:
+              | boolean
+              | { base: number; initialBackoffMs: number; maxAttempts: number };
+            schedulerOptions?: { runAt?: number } | { runAfter?: number };
+            step: {
+              args: any;
+              argsSize: number;
+              completedAt?: number;
+              functionType: "query" | "mutation" | "action";
+              handle: string;
+              inProgress: boolean;
+              name: string;
+              runResult?:
+                | { kind: "success"; returnValue: any }
+                | { error: string; kind: "failed" }
+                | { kind: "canceled" };
+              startedAt: number;
+              workId?: string;
+            };
+          }>;
           workflowId: string;
           workpoolOptions?: {
             defaultRetryBehavior?: {
@@ -268,7 +269,7 @@ export declare const components: {
             retryActionsByDefault?: boolean;
           };
         },
-        {
+        Array<{
           _creationTime: number;
           _id: string;
           step: {
@@ -288,7 +289,7 @@ export declare const components: {
           };
           stepNumber: number;
           workflowId: string;
-        }
+        }>
       >;
     };
     workflow: {

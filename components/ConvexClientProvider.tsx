@@ -18,21 +18,26 @@ export function ConvexClientProvider({ children }: { children: ReactNode }) {
 }
 
 function useAuthFromAuthKit() {
-  const { user, loading: isUserLoading } = useAuth({ ensureSignedIn: true });
-  const { getAccessToken, loading: isTokenLoading, error: tokenError } = useAccessToken();
+  const { user, loading: isLoading } = useAuth();
+  const { accessToken, loading: tokenLoading, error: tokenError } = useAccessToken();
+  const loading = (isLoading ?? false) || (tokenLoading ?? false);
+  const authenticated = !!user && !!accessToken && !loading;
 
-  const isLoading = (isUserLoading ?? false) || (isTokenLoading ?? false);
-  const isAuthenticated = !!user;
+  const stableAccessToken = useRef<string | null>(null);
+  if (accessToken && !tokenError) {
+    stableAccessToken.current = accessToken;
+  }
 
   const fetchAccessToken = useCallback(async () => {
-    if (tokenError) return null;
-    const token = await getAccessToken();
-    return token ?? null;
-  }, [getAccessToken, tokenError]);
+    if (stableAccessToken.current && !tokenError) {
+      return stableAccessToken.current;
+    }
+    return null;
+  }, [tokenError]);
 
   return {
-    isLoading,
-    isAuthenticated,
+    isLoading: loading,
+    isAuthenticated: authenticated,
     fetchAccessToken,
   };
 }
