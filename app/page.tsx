@@ -1,6 +1,6 @@
 'use client';
 
-import { Authenticated, Unauthenticated, useMutation, useQuery, useConvexAuth } from 'convex/react';
+import { Authenticated, Unauthenticated } from 'convex/react';
 import Link from 'next/link';
 import { useAuth } from '@workos-inc/authkit-nextjs/components';
 import type { User } from '@workos-inc/node';
@@ -38,17 +38,6 @@ function SignInForm() {
       <Link href="/sign-up">
         <Button className="bg-foreground text-background px-4 py-2 rounded-md">Sign up</Button>
       </Link>
-    </div>
-  );
-}
-
-function ResourceCard({ title, description, href }: { title: string; description: string; href: string }) {
-  return (
-    <div className="flex flex-col gap-2 bg-slate-200 dark:bg-slate-800 p-4 rounded-md h-28 overflow-auto">
-      <a href={href} className="text-sm underline hover:no-underline">
-        {title}
-      </a>
-      <p className="text-xs">{description}</p>
     </div>
   );
 }
