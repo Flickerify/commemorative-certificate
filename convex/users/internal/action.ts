@@ -23,6 +23,8 @@ export const upsertFromWorkos = internalAction({
       emailVerified: workosUser.emailVerified,
       firstName: workosUser.firstName,
       lastName: workosUser.lastName,
+      profilePictureUrl: workosUser.profilePictureUrl,
+      updatedAt: Date.now(),
     });
   },
 });

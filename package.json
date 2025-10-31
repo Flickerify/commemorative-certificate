@@ -35,6 +35,7 @@
     "clsx": "^2.1.1",
     "convex": "^1.28.0",
     "convex-helpers": "^0.1.104",
+    "hono": "^4.10.4",
     "lucide-react": "^0.548.0",
     "next": "16.0.1",
     "react": "^19.2.0",
