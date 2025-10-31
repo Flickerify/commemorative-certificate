@@ -60,6 +60,20 @@ export const EntityType = v.union(
 );
 
 // ============================================================
+// LOCATIONS (normalized administrative regions)
+// ============================================================
+
+export const locations = defineTable({
+  country: v.string(), // ISO 3166-1 alpha-2: "CH", "DE", "FR", etc.
+  region: v.optional(v.string()), // First-level admin division: canton, state, province, etc.
+  subRegion: v.optional(v.string()), // Second-level admin division: commune, city, district, etc.
+  timezone: v.string(), // IANA timezone: "Europe/Zurich", "Europe/Berlin", etc.
+  externalId: v.optional(v.string()), // Country-specific external ID (e.g., BFS id for CH)
+  notes: v.optional(v.string()),
+  updatedAt: v.number(),
+});
+
+// ============================================================
 // SOURCES & CRAWLER CONFIGURATION
 // ============================================================
 
@@ -67,9 +81,7 @@ export const sources = defineTable({
   url: v.string(),
   name: v.optional(v.string()),
   entityType: v.optional(EntityType),
-  govdirectory: v.optional(v.string()),
-  canton: v.optional(v.string()), // "ZH", "VD", ...
-  commune: v.optional(v.string()), // "Zürich", "Lausanne", ...
+  locationId: v.optional(v.id('locations')), // Reference to normalized location
   lang: v.optional(Language),
   profileId: v.optional(v.id('profiles')),
   enabled: v.boolean(),
@@ -271,10 +283,16 @@ export const reviews = defineTable({
 });
 
 export default defineSchema({
+  // Normalized locations for multi-country support
+  locations: locations
+    .index('by_country', ['country'])
+    .index('by_country_region', ['country', 'region'])
+    .index('by_external', ['externalId']),
+
   sources: sources
     .index('by_enabled', ['enabled'])
     .index('by_url', ['url'])
-    .index('by_canton', ['canton'])
+    .index('by_location', ['locationId'])
     .index('by_hash', ['hash']),
 
   // Per-site crawler configuration (YAML-style, stored as JSON)
