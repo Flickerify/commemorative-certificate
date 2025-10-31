@@ -13,7 +13,9 @@ Commemorative Certificate is a Convex + Next.js application scaffolded from the 
 - Tailwind CSS 4 with PostCSS and `tw-animate-css`
 - class-variance-authority (CVA), Radix Slot, and a minimal UI kit (e.g., `components/ui/button`)
 - ESLint 9 with `next/core-web-vitals` + TypeScript config
+- Shadcn UI 3.5.0 with TanStack Form
 - Prettier 3
+- Bun 1.3.1 (preferred over npm for faster install times and smaller bundle sizes)
 
 ## Project Conventions
 
@@ -39,7 +41,7 @@ Commemorative Certificate is a Convex + Next.js application scaffolded from the 
 
 ### Testing Strategy
 
-- Manual testing via `npm run dev` running Next and Convex in parallel.
+- Manual testing via `bun run dev` running Next and Convex in parallel.
 - Add unit tests (TBD) for Convex functions and React components as the app grows; prefer lightweight testing (Vitest/React Testing Library) and Convex test helpers when introduced.
 
 ### Git Workflow

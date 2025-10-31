@@ -19,6 +19,13 @@ import type * as locations_internal_mutation from "../locations/internal/mutatio
 import type * as locations_query from "../locations/query.js";
 import type * as locations_types from "../locations/types.js";
 import type * as locations_utils from "../locations/utils.js";
+import type * as profiles_mutation from "../profiles/mutation.js";
+import type * as profiles_query from "../profiles/query.js";
+import type * as sources_action from "../sources/action.js";
+import type * as sources_internal_mutation from "../sources/internal/mutation.js";
+import type * as sources_internal_query from "../sources/internal/query.js";
+import type * as sources_mutation from "../sources/mutation.js";
+import type * as sources_query from "../sources/query.js";
 import type * as types_index from "../types/index.js";
 import type * as users_admin_mutation from "../users/admin/mutation.js";
 import type * as users_admin from "../users/admin.js";
@@ -57,6 +64,13 @@ declare const fullApi: ApiFromModules<{
   "locations/query": typeof locations_query;
   "locations/types": typeof locations_types;
   "locations/utils": typeof locations_utils;
+  "profiles/mutation": typeof profiles_mutation;
+  "profiles/query": typeof profiles_query;
+  "sources/action": typeof sources_action;
+  "sources/internal/mutation": typeof sources_internal_mutation;
+  "sources/internal/query": typeof sources_internal_query;
+  "sources/mutation": typeof sources_mutation;
+  "sources/query": typeof sources_query;
   "types/index": typeof types_index;
   "users/admin/mutation": typeof users_admin_mutation;
   "users/admin": typeof users_admin;

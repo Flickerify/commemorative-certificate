@@ -18,7 +18,7 @@ export const switzerlandConfig: LocationImportConfig = {
       transform: (value) => value.trim().toUpperCase(),
     },
     subRegion: {
-      column: 'Gemeindename',
+      column: 'Ortschaftsname',
       transform: (value) => value.trim(),
     },
     longitude: {

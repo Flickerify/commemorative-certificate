@@ -131,6 +131,7 @@ export const entityTypeValidator = v.union(...Object.values(ENTITY_TYPES).map(v.
 // ============================================================
 
 export const locations = defineTable({
+  slugName: v.string(),
   country: v.string(), // ISO 3166-1 alpha-2: "CH", "DE", "FR", etc.
   region: v.optional(v.string()), // First-level admin division: canton, state, province, etc.
   subRegion: v.optional(v.string()), // Second-level admin division: commune, city, district, etc.
@@ -361,7 +362,13 @@ export default defineSchema({
   locations: locations
     .index('by_country', ['country'])
     .index('by_country_region', ['country', 'region'])
-    .index('by_external', ['externalId']),
+    .index('by_external', ['externalId'])
+    .index('slugName', ['slugName'])
+    .searchIndex('search_city', {
+      searchField: 'subRegion',
+      filterFields: ['country'],
+      staged: false,
+    }),
 
   sources: sources
     .index('by_enabled', ['enabled'])

@@ -17,21 +17,17 @@ export default function AdminDashboard() {
           description="Import and manage location data from CSV files"
           href="/admin/locations"
         />
-        {/* Add more admin cards here as needed */}
+        <AdminCard
+          title="Sources"
+          description="Manage event sources (municipal websites, PDFs, APIs)"
+          href="/admin/sources"
+        />
       </div>
     </div>
   );
 }
 
-function AdminCard({
-  title,
-  description,
-  href,
-}: {
-  title: string;
-  description: string;
-  href: string;
-}) {
+function AdminCard({ title, description, href }: { title: string; description: string; href: string }) {
   return (
     <Link href={href}>
       <div className="p-6 border-2 border-slate-200 dark:border-slate-800 rounded-lg hover:border-slate-400 dark:hover:border-slate-600 transition-colors">
@@ -41,4 +37,3 @@ function AdminCard({
     </Link>
   );
 }
-

@@ -1,6 +1,7 @@
 import { v } from 'convex/values';
 import { internalMutation } from '../../functions';
 import { languageValidator } from '../../schema';
+import slugify from 'slugify';
 
 /**
  * Upsert a single location with deduplication based on externalId
@@ -23,11 +24,19 @@ export const upsertLocation = internalMutation({
   async handler(ctx, args) {
     const now = Date.now();
 
+    const slugName = slugify(`${args.country}-${args.region}-${args.subRegion}-${args.postalCode}`, {
+      lower: true,
+      strict: true,
+      locale: 'en',
+      trim: true,
+      replacement: '-',
+    });
+
     // Try to find existing location by externalId if provided
     if (args.externalId) {
       const existing = await ctx.db
         .query('locations')
-        .withIndex('by_external', (q) => q.eq('externalId', args.externalId))
+        .withIndex('slugName', (q) => q.eq('slugName', slugName))
         .first();
 
       if (existing) {
@@ -52,6 +61,7 @@ export const upsertLocation = internalMutation({
 
     // Create new location
     const id = await ctx.db.insert('locations', {
+      slugName,
       country: args.country,
       region: args.region,
       subRegion: args.subRegion,
