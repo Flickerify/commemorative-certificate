@@ -1,6 +1,59 @@
 import { defineSchema, defineTable } from 'convex/server';
 import { v } from 'convex/values';
 
+// Reusable literal unions
+const Language = v.union(v.literal('de'), v.literal('fr'), v.literal('it'), v.literal('rm'), v.literal('en'));
+
+const DocStatus = v.union(v.literal('new'), v.literal('parsed'), v.literal('extracted'), v.literal('error'));
+
+const ParsedStatus = v.union(v.literal('new'), v.literal('extracted'), v.literal('error'));
+
+const QueueStatus = v.union(v.literal('pending'), v.literal('fetched'), v.literal('error'));
+
+const Category = v.union(
+  v.literal('kids'),
+  v.literal('sport'),
+  v.literal('culture'),
+  v.literal('market'),
+  v.literal('music'),
+  v.literal('edu'),
+  v.literal('other'),
+);
+
+const PriceType = v.union(v.literal('free'), v.literal('paid'), v.literal('donation'), v.literal('unknown'));
+
+const SourceKind = v.union(
+  v.literal('pdf'),
+  v.literal('html'),
+  v.literal('ics'),
+  v.literal('api'),
+  v.literal('manual'),
+);
+
+const TextOrigin = v.union(v.literal('source'), v.literal('machine'), v.literal('human'));
+
+const AlertCadence = v.union(v.literal('hourly'), v.literal('daily'), v.literal('weekly'));
+
+const RunKind = v.union(
+  v.literal('crawl'),
+  v.literal('parse'),
+  v.literal('extract'),
+  v.literal('notify'),
+  v.literal('repair'),
+);
+
+const ReviewStatus = v.union(v.literal('pending'), v.literal('approved'), v.literal('rejected'), v.literal('fixed'));
+
+const PlaceKind = v.union(v.literal('city'), v.literal('venue'));
+
+const EntityType = v.union(
+  v.literal('commune'),
+  v.literal('association'),
+  v.literal('venue'),
+  v.literal('department'),
+  v.literal('other'),
+);
+
 export default defineSchema({
   // ============================================================
   // SOURCES & CRAWLER CONFIGURATION
@@ -9,12 +62,12 @@ export default defineSchema({
   sources: defineTable({
     url: v.string(),
     name: v.optional(v.string()),
-    entityType: v.optional(v.string()), // "commune|association|venue|..."
+    entityType: v.optional(EntityType),
     govdirectory: v.optional(v.string()),
     canton: v.optional(v.string()), // "ZH", "VD", ...
     commune: v.optional(v.string()), // "Zürich", "Lausanne", ...
-    lang: v.optional(v.string()), // primary: "de|fr|it|rm|en"
-    profileId: v.optional(v.id('profiles')), // link to crawler config
+    lang: v.optional(Language),
+    profileId: v.optional(v.id('profiles')),
     enabled: v.boolean(),
     hash: v.string(), // dedupe key (url hash)
     lastFetchAt: v.optional(v.number()),
@@ -32,7 +85,7 @@ export default defineSchema({
   profiles: defineTable({
     siteId: v.string(), // e.g., "gemeinde-zug"
     domain: v.string(),
-    lang: v.string(),
+    lang: Language,
     timezone: v.string(), // "Europe/Zurich"
     config: v.any(), // full YAML-like object: start_urls, item selectors, pagination, detail_page, etc.
     version: v.number(),
@@ -55,7 +108,7 @@ export default defineSchema({
     mime: v.string(),
     sizeBytes: v.optional(v.number()),
     fetchedAt: v.number(),
-    status: v.string(), // "new|parsed|extracted|error"
+    status: DocStatus,
     error: v.optional(v.string()),
     updatedAt: v.number(),
   })
@@ -67,11 +120,11 @@ export default defineSchema({
   parsed: defineTable({
     docId: v.id('docs'),
     r2Key: v.string(), // parsed JSONL in R2
-    lang: v.string(),
+    lang: Language,
     blockCount: v.number(),
     ocrUsed: v.boolean(),
     parsedAt: v.number(),
-    status: v.string(), // "new|extracted|error"
+    status: ParsedStatus,
     error: v.optional(v.string()),
   })
     .index('by_doc', ['docId'])
@@ -83,7 +136,7 @@ export default defineSchema({
     url: v.string(),
     urlHash: v.string(), // dedupe
     meta: v.optional(v.any()), // snippet from list (title, date_block, ...)
-    status: v.string(), // "pending|fetched|error"
+    status: QueueStatus,
     attempts: v.number(),
     lastAttempt: v.optional(v.number()),
     error: v.optional(v.string()),
@@ -114,10 +167,10 @@ export default defineSchema({
     geohash7: v.optional(v.string()), // for radius prefilter
 
     // Classification
-    category: v.optional(v.string()), // "kids|sport|culture|market|music|edu|other"
+    category: v.optional(Category),
     ageMin: v.optional(v.number()),
     ageMax: v.optional(v.number()),
-    priceType: v.optional(v.string()), // "free|paid|donation|unknown"
+    priceType: v.optional(PriceType),
     priceAmount: v.optional(v.string()), // e.g., "CHF 5–10"
 
     // Media
@@ -125,8 +178,8 @@ export default defineSchema({
     attachments: v.optional(v.array(v.string())),
 
     // Provenance & Quality
-    sourceLanguage: v.string(), // "de|fr|it|rm|en"
-    sourceKind: v.string(), // "pdf|html|ics|api|manual"
+    sourceLanguage: Language,
+    sourceKind: SourceKind,
     contentHash: v.string(), // for dedupe
     confidence: v.optional(v.number()), // 0..1
     verified: v.boolean(), // passed validation
@@ -144,14 +197,14 @@ export default defineSchema({
   // Localized text per event
   event_i18n: defineTable({
     eventId: v.id('events'),
-    locale: v.string(), // "de|fr|it|rm|en"
+    locale: Language,
     title: v.string(),
     subtitle: v.optional(v.string()),
     description: v.optional(v.string()),
     venueDisplayName: v.optional(v.string()),
     priceDisplay: v.optional(v.string()),
     organizerName: v.optional(v.string()),
-    origin: v.string(), // "source|machine|human"
+    origin: TextOrigin,
     quality: v.optional(v.number()), // 0..1
     provenance: v.optional(v.string()), // source URL/doc id
     updatedAt: v.number(),
@@ -165,7 +218,7 @@ export default defineSchema({
   // ============================================================
 
   places: defineTable({
-    kind: v.string(), // "city|venue"
+    kind: PlaceKind,
     externalId: v.optional(v.string()), // BFS id, etc.
     lat: v.number(),
     lng: v.number(),
@@ -177,7 +230,7 @@ export default defineSchema({
 
   place_i18n: defineTable({
     placeId: v.id('places'),
-    locale: v.string(),
+    locale: Language,
     name: v.string(),
     slug: v.optional(v.string()),
   }).index('by_place_locale', ['placeId', 'locale']),
@@ -197,7 +250,7 @@ export default defineSchema({
     homeCityId: v.optional(v.string()),
     // Preferences
     kidsAges: v.optional(v.array(v.number())),
-    preferredLocale: v.optional(v.string()), // "de|fr|it|en"
+    preferredLocale: v.optional(Language),
     prefs: v.optional(v.any()),
     // Mobile
     expoPushToken: v.optional(v.string()),
@@ -209,10 +262,10 @@ export default defineSchema({
   alerts: defineTable({
     userId: v.id('users'),
     radiusKm: v.number(), // 20|30|40
-    categories: v.array(v.string()),
+    categories: v.array(Category),
     age: v.optional(v.number()), // filter events for this age
     daysAhead: v.number(), // e.g., 14 (look 2 weeks ahead)
-    cadence: v.string(), // "hourly|daily|weekly"
+    cadence: AlertCadence,
     enabled: v.boolean(),
     lastSentAt: v.optional(v.number()),
     updatedAt: v.number(),
@@ -225,7 +278,7 @@ export default defineSchema({
   // ============================================================
 
   runs: defineTable({
-    kind: v.string(), // "crawl|parse|extract|notify|repair"
+    kind: RunKind,
     ref: v.optional(v.string()), // source/doc/profile id
     startedAt: v.number(),
     finishedAt: v.optional(v.number()),
@@ -241,7 +294,7 @@ export default defineSchema({
   reviews: defineTable({
     eventId: v.id('events'),
     reason: v.string(), // "low_confidence|date_mismatch|missing_location|..."
-    status: v.string(), // "pending|approved|rejected|fixed"
+    status: ReviewStatus,
     assignedTo: v.optional(v.id('users')),
     notes: v.optional(v.string()),
     resolvedAt: v.optional(v.number()),
