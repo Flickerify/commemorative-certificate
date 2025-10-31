@@ -14,6 +14,7 @@ import {
 } from './_generated/server';
 import { getCurrentUserOrThrow } from './users/utils';
 import { internal } from './_generated/api';
+import { ROLES } from './schema';
 
 async function rlsRules(ctx: QueryCtx) {
   const user = await getCurrentUserOrThrow(ctx);
@@ -25,6 +26,15 @@ async function rlsRules(ctx: QueryCtx) {
 export const publicQuery = customQuery(
   baseQuery,
   customCtx(async (ctx) => ctx),
+);
+
+export const protectedAdminQuery = customQuery(
+  baseQuery,
+  customCtx(async (ctx) => {
+    const user = await getCurrentUserOrThrow(ctx);
+    if (user.role !== ROLES.ADMIN) throw new ConvexError('Only admins can access this resource');
+    return { ...ctx, db: wrapDatabaseReader(ctx, ctx.db, await rlsRules(ctx)), user };
+  }),
 );
 
 export const protectedQuery = customQuery(
@@ -47,6 +57,15 @@ export const internalQuery = customQuery(
 export const publicMutation = customMutation(
   baseMutation,
   customCtx(async (ctx) => ctx),
+);
+
+export const protectedAdminMutation = customMutation(
+  baseMutation,
+  customCtx(async (ctx) => {
+    const user = await getCurrentUserOrThrow(ctx);
+    if (user.role !== ROLES.ADMIN) throw new ConvexError('Only admins can access this resource');
+    return { ...ctx, db: wrapDatabaseWriter(ctx, ctx.db, await rlsRules(ctx)), user };
+  }),
 );
 
 export const protectedMutation = customMutation(
@@ -78,6 +97,24 @@ export const publicAction = customAction(
 export const internalAction = customAction(
   baseInternalAction,
   customCtx(async (ctx) => ctx),
+);
+
+export const protectedAdminAction = customAction(
+  baseAction,
+  customCtx(async (ctx) => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) throw new ConvexError('Authentication required');
+    const user = await ctx.runQuery(internal.users.internal.query.findByExternalId, {
+      externalId: identity.subject,
+    });
+    if (!user) throw new ConvexError('User not found');
+    if (user.role !== ROLES.ADMIN) throw new ConvexError('Only admins can access this resource');
+    const finalUser = user as Doc<'users'>;
+    return {
+      ...ctx,
+      user: finalUser,
+    };
+  }),
 );
 
 export const protectedAction = customAction(

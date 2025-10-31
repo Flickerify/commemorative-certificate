@@ -1,63 +1,130 @@
 import { defineSchema, defineTable } from 'convex/server';
 import { v } from 'convex/values';
 
-// Reusable literal unions
-export const Language = v.union(v.literal('de'), v.literal('fr'), v.literal('it'), v.literal('rm'), v.literal('en'));
+export const ROLES = {
+  ADMIN: 'admin',
+  USER: 'user',
+} as const;
 
-export const DocStatus = v.union(v.literal('new'), v.literal('parsed'), v.literal('extracted'), v.literal('error'));
+export const roleValidator = v.optional(v.union(...Object.values(ROLES).map(v.literal)));
 
-export const ParsedStatus = v.union(v.literal('new'), v.literal('extracted'), v.literal('error'));
+export const LANGUAGES = {
+  DE: 'de',
+  FR: 'fr',
+  IT: 'it',
+  RM: 'rm',
+  EN: 'en',
+} as const;
 
-export const QueueStatus = v.union(v.literal('pending'), v.literal('fetched'), v.literal('error'));
+export const languageValidator = v.union(...Object.values(LANGUAGES).map(v.literal));
 
-export const Category = v.union(
-  v.literal('kids'),
-  v.literal('sport'),
-  v.literal('culture'),
-  v.literal('market'),
-  v.literal('music'),
-  v.literal('edu'),
-  v.literal('other'),
-);
+export const DOC_STATUSES = {
+  NEW: 'new',
+  PARSED: 'parsed',
+  EXTRACTED: 'extracted',
+  ERROR: 'error',
+} as const;
 
-export const PriceType = v.union(v.literal('free'), v.literal('paid'), v.literal('donation'), v.literal('unknown'));
+export const docStatusValidator = v.union(...Object.values(DOC_STATUSES).map(v.literal));
 
-export const SourceKind = v.union(
-  v.literal('pdf'),
-  v.literal('html'),
-  v.literal('ics'),
-  v.literal('api'),
-  v.literal('manual'),
-);
+export const PARSED_STATUSES = {
+  NEW: 'new',
+  EXTRACTED: 'extracted',
+  ERROR: 'error',
+} as const;
 
-export const TextOrigin = v.union(v.literal('source'), v.literal('machine'), v.literal('human'));
+export const parsedStatusValidator = v.union(...Object.values(PARSED_STATUSES).map(v.literal));
 
-export const AlertCadence = v.union(v.literal('hourly'), v.literal('daily'), v.literal('weekly'));
+export const QUEUE_STATUSES = {
+  PENDING: 'pending',
+  FETCHED: 'fetched',
+  ERROR: 'error',
+} as const;
 
-export const RunKind = v.union(
-  v.literal('crawl'),
-  v.literal('parse'),
-  v.literal('extract'),
-  v.literal('notify'),
-  v.literal('repair'),
-);
+export const queueStatusValidator = v.union(...Object.values(QUEUE_STATUSES).map(v.literal));
 
-export const ReviewStatus = v.union(
-  v.literal('pending'),
-  v.literal('approved'),
-  v.literal('rejected'),
-  v.literal('fixed'),
-);
+export const CATEGORIES = {
+  KIDS: 'kids',
+  SPORT: 'sport',
+  CULTURE: 'culture',
+  MARKET: 'market',
+  MUSIC: 'music',
+  EDU: 'edu',
+  OTHER: 'other',
+} as const;
 
-export const PlaceKind = v.union(v.literal('city'), v.literal('venue'));
+export const categoryValidator = v.union(...Object.values(CATEGORIES).map(v.literal));
 
-export const EntityType = v.union(
-  v.literal('commune'),
-  v.literal('association'),
-  v.literal('venue'),
-  v.literal('department'),
-  v.literal('other'),
-);
+export const PRICE_TYPES = {
+  FREE: 'free',
+  PAID: 'paid',
+  DONATION: 'donation',
+  UNKNOWN: 'unknown',
+} as const;
+
+export const priceTypeValidator = v.union(...Object.values(PRICE_TYPES).map(v.literal));
+
+export const SOURCE_KINDS = {
+  PDF: 'pdf',
+  HTML: 'html',
+  ICS: 'ics',
+  API: 'api',
+  MANUAL: 'manual',
+} as const;
+
+export const sourceKindValidator = v.union(...Object.values(SOURCE_KINDS).map(v.literal));
+
+export const TEXT_ORIGINS = {
+  SOURCE: 'source',
+  MACHINE: 'machine',
+  HUMAN: 'human',
+} as const;
+
+export const textOriginValidator = v.union(...Object.values(TEXT_ORIGINS).map(v.literal));
+
+export const ALERT_CADENCES = {
+  HOURLY: 'hourly',
+  DAILY: 'daily',
+  WEEKLY: 'weekly',
+} as const;
+
+export const alertCadenceValidator = v.union(...Object.values(ALERT_CADENCES).map(v.literal));
+
+export const RUN_KINDS = {
+  CRAWL: 'crawl',
+  PARSE: 'parse',
+  EXTRACT: 'extract',
+  NOTIFY: 'notify',
+  REPAIR: 'repair',
+} as const;
+
+export const runKindValidator = v.union(...Object.values(RUN_KINDS).map(v.literal));
+
+export const REVIEW_STATUSES = {
+  PENDING: 'pending',
+  APPROVED: 'approved',
+  REJECTED: 'rejected',
+  FIXED: 'fixed',
+} as const;
+
+export const reviewStatusValidator = v.union(...Object.values(REVIEW_STATUSES).map(v.literal));
+
+export const PLACE_KINDS = {
+  CITY: 'city',
+  VENUE: 'venue',
+} as const;
+
+export const placeKindValidator = v.union(...Object.values(PLACE_KINDS).map(v.literal));
+
+export const ENTITY_TYPES = {
+  COMMUNE: 'commune',
+  ASSOCIATION: 'association',
+  VENUE: 'venue',
+  DEPARTMENT: 'department',
+  OTHER: 'other',
+} as const;
+
+export const entityTypeValidator = v.union(...Object.values(ENTITY_TYPES).map(v.literal));
 
 // ============================================================
 // LOCATIONS (normalized administrative regions)
@@ -67,6 +134,12 @@ export const locations = defineTable({
   country: v.string(), // ISO 3166-1 alpha-2: "CH", "DE", "FR", etc.
   region: v.optional(v.string()), // First-level admin division: canton, state, province, etc.
   subRegion: v.optional(v.string()), // Second-level admin division: commune, city, district, etc.
+  postalCode: v.optional(v.string()),
+  language: v.optional(languageValidator),
+  lat: v.optional(v.number()),
+  lng: v.optional(v.number()),
+  geohash5: v.optional(v.string()),
+  geohash7: v.optional(v.string()),
   timezone: v.string(), // IANA timezone: "Europe/Zurich", "Europe/Berlin", etc.
   externalId: v.optional(v.string()), // Country-specific external ID (e.g., BFS id for CH)
   notes: v.optional(v.string()),
@@ -80,9 +153,9 @@ export const locations = defineTable({
 export const sources = defineTable({
   url: v.string(),
   name: v.optional(v.string()),
-  entityType: v.optional(EntityType),
+  entityType: v.optional(entityTypeValidator),
   locationId: v.optional(v.id('locations')), // Reference to normalized location
-  lang: v.optional(Language),
+  lang: v.optional(languageValidator),
   profileId: v.optional(v.id('profiles')),
   enabled: v.boolean(),
   hash: v.string(), // dedupe key (url hash)
@@ -96,7 +169,7 @@ export const sources = defineTable({
 export const profiles = defineTable({
   siteId: v.string(), // e.g., "gemeinde-zug"
   domain: v.string(),
-  lang: Language,
+  lang: languageValidator,
   timezone: v.string(), // "Europe/Zurich"
   config: v.any(), // full YAML-like object: start_urls, item selectors, pagination, detail_page, etc.
   version: v.number(),
@@ -116,7 +189,7 @@ export const docs = defineTable({
   mime: v.string(),
   sizeBytes: v.optional(v.number()),
   fetchedAt: v.number(),
-  status: DocStatus,
+  status: docStatusValidator,
   error: v.optional(v.string()),
   updatedAt: v.number(),
 });
@@ -124,11 +197,11 @@ export const docs = defineTable({
 export const parsed = defineTable({
   docId: v.id('docs'),
   r2Key: v.string(), // parsed JSONL in R2
-  lang: Language,
+  lang: languageValidator,
   blockCount: v.number(),
   ocrUsed: v.boolean(),
   parsedAt: v.number(),
-  status: ParsedStatus,
+  status: parsedStatusValidator,
   error: v.optional(v.string()),
 });
 
@@ -137,7 +210,7 @@ export const details_queue = defineTable({
   url: v.string(),
   urlHash: v.string(), // dedupe
   meta: v.optional(v.any()), // snippet from list (title, date_block, ...)
-  status: QueueStatus,
+  status: queueStatusValidator,
   attempts: v.number(),
   lastAttempt: v.optional(v.number()),
   error: v.optional(v.string()),
@@ -166,10 +239,10 @@ export const events = defineTable({
   geohash7: v.optional(v.string()), // for radius prefilter
 
   // Classification
-  category: v.optional(Category),
+  category: v.optional(categoryValidator),
   ageMin: v.optional(v.number()),
   ageMax: v.optional(v.number()),
-  priceType: v.optional(PriceType),
+  priceType: v.optional(priceTypeValidator),
   priceAmount: v.optional(v.string()), // e.g., "CHF 5–10"
 
   // Media
@@ -177,8 +250,8 @@ export const events = defineTable({
   attachments: v.optional(v.array(v.string())),
 
   // Provenance & Quality
-  sourceLanguage: Language,
-  sourceKind: SourceKind,
+  sourceLanguage: languageValidator,
+  sourceKind: sourceKindValidator,
   contentHash: v.string(), // for dedupe
   confidence: v.optional(v.number()), // 0..1
   verified: v.boolean(), // passed validation
@@ -189,14 +262,14 @@ export const events = defineTable({
 
 export const event_i18n = defineTable({
   eventId: v.id('events'),
-  locale: Language,
+  locale: languageValidator,
   title: v.string(),
   subtitle: v.optional(v.string()),
   description: v.optional(v.string()),
   venueDisplayName: v.optional(v.string()),
   priceDisplay: v.optional(v.string()),
   organizerName: v.optional(v.string()),
-  origin: TextOrigin,
+  origin: textOriginValidator,
   quality: v.optional(v.number()), // 0..1
   provenance: v.optional(v.string()), // source URL/doc id
   updatedAt: v.number(),
@@ -207,7 +280,7 @@ export const event_i18n = defineTable({
 // ============================================================
 
 export const places = defineTable({
-  kind: PlaceKind,
+  kind: placeKindValidator,
   externalId: v.optional(v.string()), // BFS id, etc.
   lat: v.number(),
   lng: v.number(),
@@ -217,7 +290,7 @@ export const places = defineTable({
 
 export const place_i18n = defineTable({
   placeId: v.id('places'),
-  locale: Language,
+  locale: languageValidator,
   name: v.string(),
   slug: v.optional(v.string()),
 });
@@ -233,6 +306,7 @@ export const users = defineTable({
   lastName: v.union(v.string(), v.null()),
   emailVerified: v.boolean(),
   profilePictureUrl: v.union(v.string(), v.null()),
+  role: roleValidator, // User role: USER or ADMIN
   // Home location
   homeLat: v.optional(v.number()),
   homeLng: v.optional(v.number()),
@@ -240,7 +314,7 @@ export const users = defineTable({
   homeCityId: v.optional(v.string()),
   // Preferences
   kidsAges: v.optional(v.array(v.number())),
-  preferredLocale: v.optional(Language),
+  preferredLocale: v.optional(languageValidator),
   prefs: v.optional(v.any()),
   // Mobile
   expoPushToken: v.optional(v.string()),
@@ -250,10 +324,10 @@ export const users = defineTable({
 export const alerts = defineTable({
   userId: v.id('users'),
   radiusKm: v.number(), // 20|30|40
-  categories: v.array(Category),
+  categories: v.array(categoryValidator),
   age: v.optional(v.number()), // filter events for this age
   daysAhead: v.number(), // e.g., 14 (look 2 weeks ahead)
-  cadence: AlertCadence,
+  cadence: alertCadenceValidator,
   enabled: v.boolean(),
   lastSentAt: v.optional(v.number()),
   updatedAt: v.number(),
@@ -264,7 +338,7 @@ export const alerts = defineTable({
 // ============================================================
 
 export const runs = defineTable({
-  kind: RunKind,
+  kind: runKindValidator,
   ref: v.optional(v.string()), // source/doc/profile id
   startedAt: v.number(),
   finishedAt: v.optional(v.number()),
@@ -276,7 +350,7 @@ export const runs = defineTable({
 export const reviews = defineTable({
   eventId: v.id('events'),
   reason: v.string(), // "low_confidence|date_mismatch|missing_location|..."
-  status: ReviewStatus,
+  status: reviewStatusValidator,
   assignedTo: v.optional(v.id('users')),
   notes: v.optional(v.string()),
   resolvedAt: v.optional(v.number()),

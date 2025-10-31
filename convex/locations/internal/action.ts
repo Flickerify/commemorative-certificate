@@ -3,9 +3,9 @@
 import { ConvexError, v } from 'convex/values';
 import { internalAction } from '../../functions';
 import { internal } from '../../_generated/api';
-import type { LocationImportConfig } from '../types';
 import { getCountryConfig } from '../configs';
-import { parseCsvHeader, parseCsvLine, getTimezoneFromCoordinates } from '../utils';
+import { parseCsvHeader, parseCsvLine, getTimezoneFromCoordinates, generateGeohash5, generateGeohash7 } from '../utils';
+import { LANGUAGES } from '../../schema';
 
 interface ImportResult {
   total: number;
@@ -23,6 +23,13 @@ export const importLocationsFromCsv = internalAction({
     csvText: v.string(),
     country: v.string(),
   },
+  returns: v.object({
+    total: v.number(),
+    created: v.number(),
+    updated: v.number(),
+    errors: v.number(),
+    errorMessages: v.array(v.string()),
+  }),
   async handler(ctx, args): Promise<ImportResult> {
     const config = getCountryConfig(args.country);
     if (!config) {
@@ -54,6 +61,8 @@ export const importLocationsFromCsv = internalAction({
     const subRegionIndex = config.mapping.subRegion ? getColumnIndex(config.mapping.subRegion.column) : undefined;
     const longitudeIndex = getColumnIndex(config.mapping.longitude.column);
     const latitudeIndex = getColumnIndex(config.mapping.latitude.column);
+    const postalCodeIndex = config.mapping.postalCode ? getColumnIndex(config.mapping.postalCode.column) : undefined;
+    const languageIndex = config.mapping.language ? getColumnIndex(config.mapping.language.column) : undefined;
 
     const result: ImportResult = {
       total: lines.length - 1, // Exclude header
@@ -117,25 +126,57 @@ export const importLocationsFromCsv = internalAction({
               : values[subRegionIndex].trim()
             : undefined;
 
+        // Extract postal code
+        let postalCode: string | undefined = undefined;
+        if (postalCodeIndex !== undefined && values[postalCodeIndex]) {
+          const postalCodeValue = config.mapping.postalCode?.transform
+            ? config.mapping.postalCode.transform(values[postalCodeIndex])
+            : values[postalCodeIndex].trim();
+          postalCode = typeof postalCodeValue === 'string' ? postalCodeValue : undefined;
+        }
+
+        // Extract language
+        let language: (typeof LANGUAGES)[keyof typeof LANGUAGES] | undefined = undefined;
+        if (languageIndex !== undefined && values[languageIndex]) {
+          const languageValue = config.mapping.language?.transform
+            ? config.mapping.language.transform(values[languageIndex])
+            : values[languageIndex].trim().toLowerCase();
+          const langStr = typeof languageValue === 'string' ? languageValue : String(languageValue);
+          // Validate against allowed language values
+          if (
+            langStr === LANGUAGES.DE ||
+            langStr === LANGUAGES.FR ||
+            langStr === LANGUAGES.IT ||
+            langStr === LANGUAGES.RM ||
+            langStr === LANGUAGES.EN
+          ) {
+            language = langStr;
+          }
+        }
+
         // Determine timezone
         const timezone = config.timezoneResolver
           ? config.timezoneResolver(latitude as number, longitude as number)
           : getTimezoneFromCoordinates(latitude as number, longitude as number, config.defaultTimezone);
 
+        // Generate geohashes
+        const geohash5 = generateGeohash5(latitude as number, longitude as number);
+        const geohash7 = generateGeohash7(latitude as number, longitude as number);
+
         // Build notes
         const notesParts: string[] = [];
-        if (config.mapping.postalCode && values[getColumnIndex(config.mapping.postalCode.column)]) {
-          const postalCode = config.mapping.postalCode.transform
-            ? config.mapping.postalCode.transform(values[getColumnIndex(config.mapping.postalCode.column)])
-            : values[getColumnIndex(config.mapping.postalCode.column)].trim();
-          notesParts.push(`Postal Code: ${postalCode}`);
-        }
 
         // Upsert location
         const upsertResult = await ctx.runMutation(internal.locations.internal.mutation.upsertLocation, {
           country: config.country,
           region: typeof region === 'string' ? region : undefined,
           subRegion: typeof subRegion === 'string' ? subRegion : undefined,
+          postalCode,
+          language,
+          lat: latitude as number,
+          lng: longitude as number,
+          geohash5,
+          geohash7,
           timezone,
           externalId: typeof externalId === 'string' ? externalId : String(externalId),
           notes: notesParts.length > 0 ? notesParts.join('; ') : undefined,

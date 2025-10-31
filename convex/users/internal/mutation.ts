@@ -13,7 +13,11 @@ export const upsertFromWorkos = internalMutation({
     if (!user) {
       return await ctx.db.insert('users', args);
     }
-    await ctx.db.patch(user._id, args);
+    // Preserve existing role when updating
+    await ctx.db.patch(user._id, {
+      ...args,
+      role: args.role || user.role,
+    });
 
     return user._id;
   },

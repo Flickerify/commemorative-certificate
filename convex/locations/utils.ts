@@ -13,6 +13,70 @@ export function getTimezoneFromCoordinates(lat: number, lng: number, defaultTime
 }
 
 /**
+ * Simple geohash encoding for lat/lng coordinates
+ * This is a basic implementation - for production, consider using a proper geohash library
+ */
+function encodeGeohash(lat: number, lng: number, precision: number): string {
+  const BASE32 = '0123456789bcdefghjkmnpqrstuvwxyz';
+  let bits = 0;
+  let bit = 0;
+  let evenBit = true;
+  let geohash = '';
+
+  let latMin = -90.0;
+  let latMax = 90.0;
+  let lngMin = -180.0;
+  let lngMax = 180.0;
+
+  while (geohash.length < precision) {
+    if (evenBit) {
+      // longitude
+      const mid = (lngMin + lngMax) / 2;
+      if (lng >= mid) {
+        bits = (bits << 1) + 1;
+        lngMin = mid;
+      } else {
+        bits = (bits << 1) + 0;
+        lngMax = mid;
+      }
+    } else {
+      // latitude
+      const mid = (latMin + latMax) / 2;
+      if (lat >= mid) {
+        bits = (bits << 1) + 1;
+        latMin = mid;
+      } else {
+        bits = (bits << 1) + 0;
+        latMax = mid;
+      }
+    }
+    evenBit = !evenBit;
+
+    if (++bit === 5) {
+      geohash += BASE32[bits];
+      bit = 0;
+      bits = 0;
+    }
+  }
+
+  return geohash;
+}
+
+/**
+ * Generate geohash5 (5-character precision, ~5km accuracy)
+ */
+export function generateGeohash5(lat: number, lng: number): string {
+  return encodeGeohash(lat, lng, 5);
+}
+
+/**
+ * Generate geohash7 (7-character precision, ~150m accuracy)
+ */
+export function generateGeohash7(lat: number, lng: number): string {
+  return encodeGeohash(lat, lng, 7);
+}
+
+/**
  * Parse CSV line into record
  */
 export function parseCsvLine(line: string, delimiter: string = ','): string[] {
