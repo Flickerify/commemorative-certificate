@@ -12,6 +12,13 @@ import type * as controllers_workosWebhooksController from "../controllers/worko
 import type * as env from "../env.js";
 import type * as functions from "../functions.js";
 import type * as http from "../http.js";
+import type * as locations_action from "../locations/action.js";
+import type * as locations_configs from "../locations/configs.js";
+import type * as locations_internal_action from "../locations/internal/action.js";
+import type * as locations_internal_mutation from "../locations/internal/mutation.js";
+import type * as locations_query from "../locations/query.js";
+import type * as locations_types from "../locations/types.js";
+import type * as locations_utils from "../locations/utils.js";
 import type * as types_index from "../types/index.js";
 import type * as users_internal_action from "../users/internal/action.js";
 import type * as users_internal_mutation from "../users/internal/mutation.js";
@@ -41,6 +48,13 @@ declare const fullApi: ApiFromModules<{
   env: typeof env;
   functions: typeof functions;
   http: typeof http;
+  "locations/action": typeof locations_action;
+  "locations/configs": typeof locations_configs;
+  "locations/internal/action": typeof locations_internal_action;
+  "locations/internal/mutation": typeof locations_internal_mutation;
+  "locations/query": typeof locations_query;
+  "locations/types": typeof locations_types;
+  "locations/utils": typeof locations_utils;
   "types/index": typeof types_index;
   "users/internal/action": typeof users_internal_action;
   "users/internal/mutation": typeof users_internal_mutation;
