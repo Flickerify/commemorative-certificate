@@ -17,7 +17,6 @@ export const createProfile = protectedAdminMutation({
     enabled: v.optional(v.boolean()),
     notes: v.optional(v.string()),
   },
-  returns: v.id('profiles'),
   async handler(ctx, args) {
     // Check for duplicate siteId
     const existing = await ctx.db
@@ -39,7 +38,6 @@ export const createProfile = protectedAdminMutation({
       siteId: args.siteId.trim(),
       domain: args.domain.trim(),
       lang: args.lang,
-      timezone: args.timezone,
       config: args.config,
       version: 1,
       enabled: args.enabled ?? true,
@@ -65,7 +63,6 @@ export const updateProfile = protectedAdminMutation({
     enabled: v.optional(v.boolean()),
     notes: v.optional(v.string()),
   },
-  returns: v.null(),
   async handler(ctx, args) {
     const profile = await ctx.db.get(args.profileId);
     if (!profile) {
@@ -126,7 +123,6 @@ export const updateProfile = protectedAdminMutation({
     }
 
     await ctx.db.patch(args.profileId, updates);
-    return null;
   },
 });
 
@@ -137,7 +133,6 @@ export const deleteProfile = protectedAdminMutation({
   args: {
     profileId: v.id('profiles'),
   },
-  returns: v.null(),
   async handler(ctx, args) {
     const profile = await ctx.db.get(args.profileId);
     if (!profile) {
@@ -157,7 +152,6 @@ export const deleteProfile = protectedAdminMutation({
     }
 
     await ctx.db.delete(args.profileId);
-    return null;
   },
 });
 
@@ -169,7 +163,6 @@ export const toggleProfileEnabled = protectedAdminMutation({
     profileId: v.id('profiles'),
     enabled: v.boolean(),
   },
-  returns: v.null(),
   async handler(ctx, args) {
     const profile = await ctx.db.get(args.profileId);
     if (!profile) {
@@ -180,6 +173,5 @@ export const toggleProfileEnabled = protectedAdminMutation({
       enabled: args.enabled,
       updatedAt: Date.now(),
     });
-    return null;
   },
 });

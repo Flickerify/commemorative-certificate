@@ -11,20 +11,6 @@ export const listProfiles = protectedAdminQuery({
     domain: v.optional(v.string()),
     lang: v.optional(languageValidator),
   },
-  returns: v.array(
-    v.object({
-      _id: v.id('profiles'),
-      siteId: v.string(),
-      domain: v.string(),
-      lang: languageValidator,
-      timezone: v.string(),
-      version: v.number(),
-      enabled: v.boolean(),
-      notes: v.optional(v.string()),
-      updatedAt: v.number(),
-      sourcesCount: v.number(),
-    }),
-  ),
   async handler(ctx, args) {
     let profiles = await ctx.db.query('profiles').collect();
 
@@ -52,7 +38,6 @@ export const listProfiles = protectedAdminQuery({
           siteId: profile.siteId,
           domain: profile.domain,
           lang: profile.lang,
-          timezone: profile.timezone,
           version: profile.version,
           enabled: profile.enabled,
           notes: profile.notes,
@@ -73,21 +58,6 @@ export const getProfile = protectedAdminQuery({
   args: {
     profileId: v.id('profiles'),
   },
-  returns: v.union(
-    v.null(),
-    v.object({
-      _id: v.id('profiles'),
-      siteId: v.string(),
-      domain: v.string(),
-      lang: languageValidator,
-      timezone: v.string(),
-      config: v.any(),
-      version: v.number(),
-      enabled: v.boolean(),
-      notes: v.optional(v.string()),
-      updatedAt: v.number(),
-    }),
-  ),
   async handler(ctx, args) {
     const profile = await ctx.db.get(args.profileId);
     if (!profile) {
@@ -99,7 +69,6 @@ export const getProfile = protectedAdminQuery({
       siteId: profile.siteId,
       domain: profile.domain,
       lang: profile.lang,
-      timezone: profile.timezone,
       config: profile.config,
       version: profile.version,
       enabled: profile.enabled,
@@ -116,14 +85,6 @@ export const getSourcesByProfile = protectedAdminQuery({
   args: {
     profileId: v.id('profiles'),
   },
-  returns: v.array(
-    v.object({
-      _id: v.id('sources'),
-      url: v.string(),
-      name: v.optional(v.string()),
-      enabled: v.boolean(),
-    }),
-  ),
   async handler(ctx, args) {
     const sources = await ctx.db
       .query('sources')

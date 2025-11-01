@@ -136,7 +136,7 @@ export const locations = defineTable({
   region: v.optional(v.string()), // First-level admin division: canton, state, province, etc.
   subRegion: v.optional(v.string()), // Second-level admin division: commune, city, district, etc.
   postalCode: v.optional(v.string()),
-  language: v.optional(languageValidator),
+  language: v.array(languageValidator),
   lat: v.optional(v.number()),
   lng: v.optional(v.number()),
   geohash5: v.optional(v.string()),
@@ -171,8 +171,7 @@ export const profiles = defineTable({
   siteId: v.string(), // e.g., "gemeinde-zug"
   domain: v.string(),
   lang: languageValidator,
-  timezone: v.string(), // "Europe/Zurich"
-  config: v.any(), // full YAML-like object: start_urls, item selectors, pagination, detail_page, etc.
+  config: v.any(), // config object used for the scrapper.
   version: v.number(),
   enabled: v.boolean(),
   notes: v.optional(v.string()),

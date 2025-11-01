@@ -136,7 +136,7 @@ export const importLocationsFromCsv = internalAction({
         }
 
         // Extract language
-        let language: (typeof LANGUAGES)[keyof typeof LANGUAGES] | undefined = undefined;
+        let language: (typeof LANGUAGES)[keyof typeof LANGUAGES][] = [];
         if (languageIndex !== undefined && values[languageIndex]) {
           const languageValue = config.mapping.language?.transform
             ? config.mapping.language.transform(values[languageIndex])
@@ -150,7 +150,7 @@ export const importLocationsFromCsv = internalAction({
             langStr === LANGUAGES.RM ||
             langStr === LANGUAGES.EN
           ) {
-            language = langStr;
+            language.push(langStr as (typeof LANGUAGES)[keyof typeof LANGUAGES]);
           }
         }
 

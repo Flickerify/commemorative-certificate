@@ -12,7 +12,7 @@ export const upsertLocation = internalMutation({
     region: v.optional(v.string()),
     subRegion: v.optional(v.string()),
     postalCode: v.optional(v.string()),
-    language: v.optional(languageValidator),
+    language: v.array(languageValidator),
     lat: v.optional(v.number()),
     lng: v.optional(v.number()),
     geohash5: v.optional(v.string()),
