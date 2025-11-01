@@ -162,3 +162,37 @@ export const searchLocations = publicQuery({
     }));
   },
 });
+
+/**
+ * Get a single location by ID
+ */
+export const getLocationById = publicQuery({
+  args: {
+    locationId: v.id('locations'),
+  },
+  returns: v.union(
+    v.null(),
+    v.object({
+      _id: v.id('locations'),
+      country: v.string(),
+      region: v.optional(v.string()),
+      subRegion: v.optional(v.string()),
+      postalCode: v.optional(v.string()),
+      externalId: v.optional(v.string()),
+    }),
+  ),
+  async handler(ctx, args) {
+    const location = await ctx.db.get(args.locationId);
+    if (!location) {
+      return null;
+    }
+    return {
+      _id: location._id,
+      country: location.country,
+      region: location.region,
+      subRegion: location.subRegion,
+      postalCode: location.postalCode,
+      externalId: location.externalId,
+    };
+  },
+});

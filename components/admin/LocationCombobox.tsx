@@ -56,10 +56,22 @@ export function LocationCombobox({
     limit: 100,
   });
 
+  // Fetch the selected location separately if it's not in the search results
+  const selectedLocationFromQuery = useQuery(
+    api.locations.query.getLocationById,
+    value && value !== '' ? { locationId: value as Id<'locations'> } : 'skip',
+  );
+
   const selectedLocation = React.useMemo(() => {
-    if (!value || !locations) return null;
-    return locations.find((loc) => loc._id === value);
-  }, [value, locations]);
+    if (!value || value === '') return null;
+    // First try to find in search results
+    if (locations) {
+      const found = locations.find((loc) => loc._id === value);
+      if (found) return found;
+    }
+    // Fall back to the separate query
+    return selectedLocationFromQuery || null;
+  }, [value, locations, selectedLocationFromQuery]);
 
   const displayValue = selectedLocation
     ? selectedLocation.subRegion || selectedLocation.region || selectedLocation.country
@@ -96,12 +108,18 @@ export function LocationCombobox({
                 const locationDetails = [location.postalCode, location.region, location.country]
                   .filter(Boolean)
                   .join(', ');
+                // Use searchable text as value for Command component filtering/navigation
+                // Include location name, postal code, region, country for searchability
+                const searchableValue = [locationName, location.postalCode, location.region, location.country]
+                  .filter(Boolean)
+                  .join(' ');
 
                 return (
                   <CommandItem
                     key={location._id}
-                    value={location._id}
+                    value={searchableValue}
                     onSelect={() => {
+                      // Use closure to capture location._id directly
                       onValueChange(value === location._id ? undefined : location._id);
                       setOpen(false);
                       setSearch('');
