@@ -20,6 +20,8 @@ export interface LocationImportConfig {
     region?: CsvColumnMapping;
     /** Sub-region column (commune, city, district, etc.) */
     subRegion?: CsvColumnMapping;
+    /** City column (city, town, village, etc.) */
+    city?: CsvColumnMapping;
     /** Longitude column */
     longitude: CsvColumnMapping;
     /** Latitude column */

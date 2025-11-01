@@ -59,6 +59,7 @@ export const importLocationsFromCsv = internalAction({
     const externalIdIndex = getColumnIndex(config.mapping.externalId.column);
     const regionIndex = config.mapping.region ? getColumnIndex(config.mapping.region.column) : undefined;
     const subRegionIndex = config.mapping.subRegion ? getColumnIndex(config.mapping.subRegion.column) : undefined;
+    const cityIndex = config.mapping.city ? getColumnIndex(config.mapping.city.column) : undefined;
     const longitudeIndex = getColumnIndex(config.mapping.longitude.column);
     const latitudeIndex = getColumnIndex(config.mapping.latitude.column);
     const postalCodeIndex = config.mapping.postalCode ? getColumnIndex(config.mapping.postalCode.column) : undefined;
@@ -126,6 +127,13 @@ export const importLocationsFromCsv = internalAction({
               : values[subRegionIndex].trim()
             : undefined;
 
+        const city =
+          cityIndex !== undefined && values[cityIndex]
+            ? config.mapping.city?.transform
+              ? config.mapping.city.transform(values[cityIndex])
+              : values[cityIndex].trim()
+            : undefined;
+
         // Extract postal code
         let postalCode: string | undefined = undefined;
         if (postalCodeIndex !== undefined && values[postalCodeIndex]) {
@@ -169,16 +177,17 @@ export const importLocationsFromCsv = internalAction({
         // Upsert location
         const upsertResult = await ctx.runMutation(internal.locations.internal.mutation.upsertLocation, {
           country: config.country,
-          region: typeof region === 'string' ? region : undefined,
-          subRegion: typeof subRegion === 'string' ? subRegion : undefined,
+          region: region?.toString(),
+          subRegion: subRegion?.toString(),
+          city: city?.toString(),
           postalCode,
           language,
-          lat: latitude as number,
-          lng: longitude as number,
+          lat: latitude,
+          lng: longitude,
           geohash5,
           geohash7,
           timezone,
-          externalId: typeof externalId === 'string' ? externalId : String(externalId),
+          externalId: String(externalId),
           notes: notesParts.length > 0 ? notesParts.join('; ') : undefined,
         });
 

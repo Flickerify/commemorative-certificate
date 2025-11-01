@@ -135,6 +135,7 @@ export const locations = defineTable({
   country: v.string(), // ISO 3166-1 alpha-2: "CH", "DE", "FR", etc.
   region: v.optional(v.string()), // First-level admin division: canton, state, province, etc.
   subRegion: v.optional(v.string()), // Second-level admin division: commune, city, district, etc.
+  city: v.optional(v.string()), // Third-level admin division: city, town, village, etc.
   postalCode: v.optional(v.string()),
   language: v.array(languageValidator),
   lat: v.optional(v.number()),
