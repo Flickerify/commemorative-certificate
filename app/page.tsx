@@ -46,6 +46,9 @@ function UserMenu({ user, onSignOut }: { user: User; onSignOut: () => void }) {
   return (
     <div className="flex items-center gap-2">
       <span className="text-sm">{user.email}</span>
+      <Link href="/admin">
+        <Button className="bg-foreground text-background px-4 py-2 rounded-md">Admin</Button>
+      </Link>
       <Button onClick={onSignOut} className="bg-red-500 text-white px-3 py-1 rounded-md text-sm hover:bg-red-600">
         Sign out
       </Button>
