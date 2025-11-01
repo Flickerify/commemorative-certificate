@@ -18,52 +18,6 @@ export const LANGUAGES = {
 
 export const languageValidator = v.union(...Object.values(LANGUAGES).map(v.literal));
 
-export const DOC_STATUSES = {
-  NEW: 'new',
-  PARSED: 'parsed',
-  EXTRACTED: 'extracted',
-  ERROR: 'error',
-} as const;
-
-export const docStatusValidator = v.union(...Object.values(DOC_STATUSES).map(v.literal));
-
-export const PARSED_STATUSES = {
-  NEW: 'new',
-  EXTRACTED: 'extracted',
-  ERROR: 'error',
-} as const;
-
-export const parsedStatusValidator = v.union(...Object.values(PARSED_STATUSES).map(v.literal));
-
-export const QUEUE_STATUSES = {
-  PENDING: 'pending',
-  FETCHED: 'fetched',
-  ERROR: 'error',
-} as const;
-
-export const queueStatusValidator = v.union(...Object.values(QUEUE_STATUSES).map(v.literal));
-
-export const CATEGORIES = {
-  KIDS: 'kids',
-  SPORT: 'sport',
-  CULTURE: 'culture',
-  MARKET: 'market',
-  MUSIC: 'music',
-  EDU: 'edu',
-  OTHER: 'other',
-} as const;
-
-export const categoryValidator = v.union(...Object.values(CATEGORIES).map(v.literal));
-
-export const PRICE_TYPES = {
-  FREE: 'free',
-  PAID: 'paid',
-  DONATION: 'donation',
-  UNKNOWN: 'unknown',
-} as const;
-
-export const priceTypeValidator = v.union(...Object.values(PRICE_TYPES).map(v.literal));
-
 export const SOURCE_KINDS = {
   PDF: 'pdf',
   HTML: 'html',
@@ -73,48 +27,6 @@ export const SOURCE_KINDS = {
 } as const;
 
 export const sourceKindValidator = v.union(...Object.values(SOURCE_KINDS).map(v.literal));
-
-export const TEXT_ORIGINS = {
-  SOURCE: 'source',
-  MACHINE: 'machine',
-  HUMAN: 'human',
-} as const;
-
-export const textOriginValidator = v.union(...Object.values(TEXT_ORIGINS).map(v.literal));
-
-export const ALERT_CADENCES = {
-  HOURLY: 'hourly',
-  DAILY: 'daily',
-  WEEKLY: 'weekly',
-} as const;
-
-export const alertCadenceValidator = v.union(...Object.values(ALERT_CADENCES).map(v.literal));
-
-export const RUN_KINDS = {
-  CRAWL: 'crawl',
-  PARSE: 'parse',
-  EXTRACT: 'extract',
-  NOTIFY: 'notify',
-  REPAIR: 'repair',
-} as const;
-
-export const runKindValidator = v.union(...Object.values(RUN_KINDS).map(v.literal));
-
-export const REVIEW_STATUSES = {
-  PENDING: 'pending',
-  APPROVED: 'approved',
-  REJECTED: 'rejected',
-  FIXED: 'fixed',
-} as const;
-
-export const reviewStatusValidator = v.union(...Object.values(REVIEW_STATUSES).map(v.literal));
-
-export const PLACE_KINDS = {
-  CITY: 'city',
-  VENUE: 'venue',
-} as const;
-
-export const placeKindValidator = v.union(...Object.values(PLACE_KINDS).map(v.literal));
 
 export const ENTITY_TYPES = {
   COMMUNE: 'commune',
@@ -156,11 +68,11 @@ export const sources = defineTable({
   domain: v.string(),
   name: v.optional(v.string()),
   entityType: v.optional(entityTypeValidator),
-  locationId: v.optional(v.id('locations')), // Reference to normalized location
+  locationId: v.optional(v.id('locations')),
   lang: v.optional(languageValidator),
   profileId: v.optional(v.id('profiles')),
   enabled: v.boolean(),
-  hash: v.string(), // dedupe key (url hash)
+  hash: v.string(),
   lastFetchAt: v.optional(v.number()),
   etag: v.optional(v.string()),
   lastModified: v.optional(v.string()),
