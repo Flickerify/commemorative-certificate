@@ -169,7 +169,7 @@ export const sources = defineTable({
 });
 
 export const profiles = defineTable({
-  siteId: v.string(), // e.g., "gemeinde-zug"
+  sourceId: v.id('sources'),
   domain: v.string(),
   lang: languageValidator,
   config: v.any(), // config object used for the scrapper.
@@ -377,7 +377,7 @@ export default defineSchema({
     .index('by_hash', ['hash']),
 
   // Per-site crawler configuration (YAML-style, stored as JSON)
-  profiles: profiles.index('by_site', ['siteId']).index('by_enabled', ['enabled']),
+  profiles: profiles.index('by_source', ['sourceId']).index('by_enabled', ['enabled']),
 
   // Raw documents (HTML/PDF) stored in R2
   docs: docs.index('by_source', ['sourceId']).index('by_status', ['status']).index('by_sha256', ['sha256']),

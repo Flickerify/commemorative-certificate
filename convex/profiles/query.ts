@@ -35,7 +35,7 @@ export const listProfiles = protectedAdminQuery({
 
         return {
           _id: profile._id,
-          siteId: profile.siteId,
+          sourceId: profile.sourceId,
           domain: profile.domain,
           lang: profile.lang,
           version: profile.version,
@@ -66,7 +66,7 @@ export const getProfile = protectedAdminQuery({
 
     return {
       _id: profile._id,
-      siteId: profile.siteId,
+      sourceId: profile.sourceId,
       domain: profile.domain,
       lang: profile.lang,
       config: profile.config,

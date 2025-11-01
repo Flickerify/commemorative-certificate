@@ -1,6 +1,7 @@
 import { ConvexError, v } from 'convex/values';
 import { protectedAdminMutation } from '../functions';
 import { languageValidator, LANGUAGES } from '../schema';
+import { Id } from '../_generated/dataModel';
 
 type Language = (typeof LANGUAGES)[keyof typeof LANGUAGES];
 
@@ -9,7 +10,7 @@ type Language = (typeof LANGUAGES)[keyof typeof LANGUAGES];
  */
 export const createProfile = protectedAdminMutation({
   args: {
-    siteId: v.string(),
+    sourceId: v.id('sources'),
     domain: v.string(),
     lang: languageValidator,
     timezone: v.string(),
@@ -21,7 +22,7 @@ export const createProfile = protectedAdminMutation({
     // Check for duplicate siteId
     const existing = await ctx.db
       .query('profiles')
-      .withIndex('by_site', (q) => q.eq('siteId', args.siteId))
+      .withIndex('by_source', (q) => q.eq('sourceId', args.sourceId))
       .first();
 
     if (existing) {
@@ -35,7 +36,7 @@ export const createProfile = protectedAdminMutation({
 
     const now = Date.now();
     const profileId = await ctx.db.insert('profiles', {
-      siteId: args.siteId.trim(),
+      sourceId: args.sourceId,
       domain: args.domain.trim(),
       lang: args.lang,
       config: args.config,
@@ -55,7 +56,7 @@ export const createProfile = protectedAdminMutation({
 export const updateProfile = protectedAdminMutation({
   args: {
     profileId: v.id('profiles'),
-    siteId: v.optional(v.string()),
+    sourceId: v.optional(v.id('sources')),
     domain: v.optional(v.string()),
     lang: v.optional(languageValidator),
     timezone: v.optional(v.string()),
@@ -70,7 +71,7 @@ export const updateProfile = protectedAdminMutation({
     }
 
     const updates: {
-      siteId?: string;
+      sourceId?: Id<'sources'>;
       domain?: string;
       lang?: Language;
       timezone?: string;
@@ -83,18 +84,18 @@ export const updateProfile = protectedAdminMutation({
       updatedAt: Date.now(),
     };
 
-    if (args.siteId !== undefined) {
+    if (args.sourceId !== undefined) {
       // Check for duplicate siteId (excluding current profile)
-      const siteId = args.siteId;
+      const sourceId = args.sourceId;
       const existing = await ctx.db
         .query('profiles')
-        .withIndex('by_site', (q) => q.eq('siteId', siteId))
+        .withIndex('by_source', (q) => q.eq('sourceId', sourceId))
         .first();
 
       if (existing && existing._id !== args.profileId) {
         throw new ConvexError('Profile with this site ID already exists');
       }
-      updates.siteId = args.siteId.trim();
+      updates.sourceId = args.sourceId;
     }
 
     if (args.domain !== undefined) {

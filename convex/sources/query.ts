@@ -1,6 +1,7 @@
 import { v } from 'convex/values';
 import { protectedAdminQuery } from '../functions';
 import { entityTypeValidator, languageValidator } from '../schema';
+import { Doc } from '../_generated/dataModel';
 
 /**
  * List all sources with optional filters
@@ -12,27 +13,6 @@ export const listSources = protectedAdminQuery({
     entityType: v.optional(entityTypeValidator),
     lang: v.optional(languageValidator),
   },
-  returns: v.array(
-    v.object({
-      _id: v.id('sources'),
-      url: v.string(),
-      name: v.optional(v.string()),
-      entityType: v.optional(entityTypeValidator),
-      locationId: v.optional(v.id('locations')),
-      lang: v.optional(languageValidator),
-      profileId: v.optional(v.id('profiles')),
-      enabled: v.boolean(),
-      hash: v.string(),
-      lastFetchAt: v.optional(v.number()),
-      etag: v.optional(v.string()),
-      lastModified: v.optional(v.string()),
-      notes: v.optional(v.string()),
-      updatedAt: v.number(),
-      // Related data
-      locationName: v.optional(v.string()),
-      profileSiteId: v.optional(v.string()),
-    }),
-  ),
   async handler(ctx, args) {
     let query = ctx.db.query('sources');
 
@@ -57,21 +37,15 @@ export const listSources = protectedAdminQuery({
     // Fetch related data
     const results = await Promise.all(
       filtered.map(async (source) => {
-        let locationName: string | undefined;
-        let profileSiteId: string | undefined;
+        let location: Doc<'locations'> | null = null;
+        let profile: Doc<'profiles'> | null = null;
 
         if (source.locationId) {
-          const location = await ctx.db.get(source.locationId);
-          if (location) {
-            locationName = location.subRegion || location.region || location.country;
-          }
+          location = await ctx.db.get(source.locationId);
         }
 
         if (source.profileId) {
-          const profile = await ctx.db.get(source.profileId);
-          if (profile) {
-            profileSiteId = profile.siteId;
-          }
+          profile = await ctx.db.get(source.profileId);
         }
 
         return {
@@ -79,9 +53,9 @@ export const listSources = protectedAdminQuery({
           url: source.url,
           name: source.name,
           entityType: source.entityType,
-          locationId: source.locationId,
+          location,
           lang: source.lang,
-          profileId: source.profileId,
+          profile,
           enabled: source.enabled,
           hash: source.hash,
           lastFetchAt: source.lastFetchAt,
@@ -89,8 +63,6 @@ export const listSources = protectedAdminQuery({
           lastModified: source.lastModified,
           notes: source.notes,
           updatedAt: source.updatedAt,
-          locationName,
-          profileSiteId,
         };
       }),
     );
@@ -106,44 +78,6 @@ export const getSource = protectedAdminQuery({
   args: {
     sourceId: v.id('sources'),
   },
-  returns: v.union(
-    v.null(),
-    v.object({
-      _id: v.id('sources'),
-      url: v.string(),
-      name: v.optional(v.string()),
-      entityType: v.optional(entityTypeValidator),
-      locationId: v.optional(v.id('locations')),
-      lang: v.optional(languageValidator),
-      profileId: v.optional(v.id('profiles')),
-      enabled: v.boolean(),
-      hash: v.string(),
-      lastFetchAt: v.optional(v.number()),
-      etag: v.optional(v.string()),
-      lastModified: v.optional(v.string()),
-      notes: v.optional(v.string()),
-      updatedAt: v.number(),
-      // Related data
-      location: v.optional(
-        v.object({
-          _id: v.id('locations'),
-          country: v.string(),
-          region: v.optional(v.string()),
-          subRegion: v.optional(v.string()),
-        }),
-      ),
-      profile: v.optional(
-        v.object({
-          _id: v.id('profiles'),
-          siteId: v.string(),
-          domain: v.string(),
-          lang: languageValidator,
-        }),
-      ),
-      docCount: v.number(),
-      eventCount: v.number(),
-    }),
-  ),
   async handler(ctx, args) {
     const source = await ctx.db.get(args.sourceId);
     if (!source) {
@@ -171,7 +105,7 @@ export const getSource = protectedAdminQuery({
       if (prof) {
         profile = {
           _id: prof._id,
-          siteId: prof.siteId,
+          sourceId: prof.sourceId,
           domain: prof.domain,
           lang: prof.lang,
         };
@@ -222,20 +156,6 @@ export const getSourceStats = protectedAdminQuery({
   args: {
     sourceId: v.id('sources'),
   },
-  returns: v.object({
-    docCount: v.number(),
-    lastFetchAt: v.optional(v.number()),
-    recentRuns: v.array(
-      v.object({
-        _id: v.id('runs'),
-        kind: v.string(),
-        startedAt: v.number(),
-        finishedAt: v.optional(v.number()),
-        ok: v.optional(v.boolean()),
-        error: v.optional(v.string()),
-      }),
-    ),
-  }),
   async handler(ctx, args) {
     const source = await ctx.db.get(args.sourceId);
     if (!source) {
