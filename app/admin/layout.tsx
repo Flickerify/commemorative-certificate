@@ -16,9 +16,6 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
                 <Link href="/admin/locations" className="text-sm hover:underline">
                   Locations
                 </Link>
-                <Link href="/admin/sources" className="text-sm hover:underline">
-                  Sources
-                </Link>
                 <Link href="/" className="text-sm hover:underline">
                   Back to App
                 </Link>
