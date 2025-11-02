@@ -5,11 +5,14 @@ import workflow from '@convex-dev/workflow/convex.config';
 import r2 from '@convex-dev/r2/convex.config';
 import crons from '@convex-dev/crons/convex.config';
 import workpool from '@convex-dev/workpool/convex.config';
+
 const app = defineApp();
+
 app.use(rateLimiter);
 app.use(workflow);
 app.use(r2);
 app.use(crons);
 app.use(workpool, { name: 'emailWorkpool' });
 app.use(workpool, { name: 'crawlerWorkpool' });
+
 export default app;

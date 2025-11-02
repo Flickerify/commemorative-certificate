@@ -19,6 +19,9 @@ Flickerify is an event discovery and aggregation platform built with Convex + Ne
 - **Convex Workpool** (`@convex-dev/workpool`) for parallel processing
 - **Convex Rate Limiter** (`@convex-dev/rate-limiter`) for rate limiting
 - **convex-helpers** for custom function wrappers and row-level security
+- **n8n** for workflow orchestration and crawl job scheduling
+- **Firecrawl** for web scraping and content extraction
+- **Crawl4AI** for advanced and custom web crawling and content extraction
 - **class-variance-authority (CVA)**, Radix Slot, `clsx`, `tailwind-merge` for UI composition
 - **ESLint 9.38.0** with `next/core-web-vitals` + TypeScript config
 - **Prettier 3.6.2**
@@ -74,14 +77,14 @@ Flickerify is an event discovery and aggregation platform built with Convex + Ne
 
 - **Users**: Managed via WorkOS; Convex `users` table stores `email`, `externalId`, `firstName`, `lastName`, `emailVerified`, `role` (USER/ADMIN), `homeLat/Lng`, `kidsAges`, `preferredLocale`, `expoPushToken`. Indexed by `email` and `externalId`.
 - **Locations**: Normalized administrative regions (countries, regions, sub-regions) with geocoding (lat/lng, geohash), timezone, language, and external IDs (e.g., BFS codes for Switzerland). Supports CSV import with country-specific configurations.
-- **Sources**: Event source URLs (PDFs, HTML, ICS, APIs, manual) linked to locations and profiles, with fetch metadata (etag, lastModified) and deduplication via URL hash.
+- **Sources**: Event source URLs (PDFs, HTML, ICS, APIs, manual) linked to locations and profiles, with fetch metadata (etag, lastModified) and deduplication via URL hash. Sources may specify a crawler type (Firecrawl, Crawl4AI, or both) and an optional n8n workflow ID for triggering crawls.
 - **Profiles**: Scraper configurations (YAML-like JSON) per site/domain with selectors, pagination rules, and detail page extraction patterns.
 - **Events**: Language-neutral event facts (time, place, category, price, geolocation) with content hash for deduplication. Separated from localized text (`event_i18n` table).
 - **Alerts**: User-defined event filters (radius, categories, age range, days ahead) with notification cadence (hourly/daily/weekly).
 
 ### Data Pipeline
 
-1. **Ingestion**: Sources → `docs` table (raw HTML/PDF stored in R2) → `parsed` table (extracted text blocks in JSONL format in R2).
+1. **Ingestion**: Sources → n8n workflows trigger crawls via Firecrawl/Crawl4AI → `docs` table (raw HTML/PDF stored in R2) → `parsed` table (extracted text blocks in JSONL format in R2). Crawls are orchestrated via n8n workflows (referenced by `n8nWorkflowId` in sources) and executed in parallel using the `crawlerWorkpool` for concurrent processing.
 2. **Extraction**: Parsed content → `details_queue` → event extraction → `events` + `event_i18n` tables.
 3. **Verification**: Low-confidence events → `reviews` table for human review.
 4. **Observability**: `runs` table tracks pipeline execution (crawl, parse, extract, notify, repair workflows).
@@ -94,7 +97,7 @@ Flickerify is an event discovery and aggregation platform built with Convex + Ne
 
 ## Important Constraints
 
-- **Environment variables**: Secrets and config via `.env.local` (e.g., `WORKOS_CLIENT_ID`, `WORKOS_API_KEY`, `WORKOS_COOKIE_PASSWORD`, `NEXT_PUBLIC_CONVEX_URL`, R2 credentials).
+- **Environment variables**: Secrets and config via `.env.local` (e.g., `WORKOS_CLIENT_ID`, `WORKOS_API_KEY`, `WORKOS_COOKIE_PASSWORD`, `NEXT_PUBLIC_CONVEX_URL`, R2 credentials, Firecrawl API keys, Crawl4AI API keys, n8n webhook URLs).
 - **Authentication**: WorkOS-hosted redirects and JWT validation; cookies and sessions managed by AuthKit middleware. Convex functions receive auth context via `ctx.auth.getUserIdentity()`.
 - **Convex function validators**: ALL functions MUST define `args` and `returns` validators using `v.*` validators. Functions without returns must use `returns: v.null()`.
 - **Database queries**: Always query via indexes; avoid `filter()` scans in production paths. Use search indexes for full-text search (e.g., `locations.search_city`).
@@ -102,6 +105,7 @@ Flickerify is an event discovery and aggregation platform built with Convex + Ne
 - **Storage**: Large documents (HTML/PDF) and parsed content stored in Convex R2, referenced by `r2Key` in `docs` and `parsed` tables.
 - **Admin access**: Routes under `/admin/*` require `role: 'admin'` checked via `AdminGuard` component and `protectedAdmin*` function wrappers.
 - **Geospatial queries**: Use geohash indexes (`geohash5` for regional buckets, `geohash7` for radius prefilters) for efficient location-based queries.
+- **Crawler configuration**: Sources can specify `crawlerType` (Firecrawl, Crawl4AI, or both) and optionally reference an n8n workflow ID for orchestration. Crawl jobs are processed via the `crawlerWorkpool` for parallel execution.
 
 ## External Dependencies
 
@@ -117,6 +121,12 @@ Flickerify is an event discovery and aggregation platform built with Convex + Ne
 - **Shadcn UI** component library built on Radix.
 - **TanStack Form** (`@tanstack/react-form`) with Zod (`zod`) for form validation.
 - **class-variance-authority (CVA)**, Radix Slot, `clsx`, `tailwind-merge` for UI composition and styling utilities.
+
+### Crawling & Web Scraping
+
+- **n8n** for workflow orchestration, scheduling crawl jobs, and coordinating external crawler services.
+- **Firecrawl** for web scraping with JavaScript rendering support and structured content extraction.
+- **Crawl4AI** for advanced web crawling with AI-powered content extraction and parsing capabilities.
 
 ### Utilities
 
