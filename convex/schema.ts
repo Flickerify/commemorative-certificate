@@ -1,94 +1,26 @@
-import { defineSchema, defineTable } from 'convex/server';
-import { v } from 'convex/values';
+import { defineSchema, defineTable } from "convex/server";
+import { v } from "convex/values";
 
 export const ROLES = {
-  ADMIN: 'admin',
-  USER: 'user',
+  ADMIN: "admin",
+  USER: "user",
 } as const;
 
-export const roleValidator = v.optional(v.union(...Object.values(ROLES).map(v.literal)));
+export const roleValidator = v.optional(
+  v.union(...Object.values(ROLES).map(v.literal))
+);
 
 export const LANGUAGES = {
-  DE: 'de',
-  FR: 'fr',
-  IT: 'it',
-  RM: 'rm',
-  EN: 'en',
+  DE: "de",
+  FR: "fr",
+  IT: "it",
+  RM: "rm",
+  EN: "en",
 } as const;
 
-export const languageValidator = v.union(...Object.values(LANGUAGES).map(v.literal));
-
-export const SOURCE_KINDS = {
-  PDF: 'pdf',
-  HTML: 'html',
-  ICS: 'ics',
-  API: 'api',
-  MANUAL: 'manual',
-} as const;
-
-export const sourceKindValidator = v.union(...Object.values(SOURCE_KINDS).map(v.literal));
-
-export const ENTITY_TYPES = {
-  COMMUNE: 'commune',
-  ASSOCIATION: 'association',
-  VENUE: 'venue',
-  DEPARTMENT: 'department',
-  OTHER: 'other',
-} as const;
-
-export const entityTypeValidator = v.union(...Object.values(ENTITY_TYPES).map(v.literal));
-
-// ============================================================
-// LOCATIONS (normalized administrative regions)
-// ============================================================
-
-export const locations = defineTable({
-  slugName: v.string(),
-  country: v.string(), // ISO 3166-1 alpha-2: "CH", "DE", "FR", etc.
-  region: v.optional(v.string()), // First-level admin division: canton, state, province, etc.
-  subRegion: v.optional(v.string()), // Second-level admin division: commune, city, district, etc.
-  city: v.optional(v.string()), // Third-level admin division: city, town, village, etc.
-  postalCode: v.optional(v.string()),
-  language: v.array(languageValidator),
-  lat: v.optional(v.number()),
-  lng: v.optional(v.number()),
-  geohash5: v.optional(v.string()),
-  geohash7: v.optional(v.string()),
-  timezone: v.string(), // IANA timezone: "Europe/Zurich", "Europe/Berlin", etc.
-  externalId: v.optional(v.string()), // Country-specific external ID (e.g., BFS id for CH)
-  notes: v.optional(v.string()),
-  updatedAt: v.number(),
-});
-
-// ============================================================
-// SOURCES & CRAWLER CONFIGURATION
-// ============================================================
-
-export const sources = defineTable({
-  domain: v.string(),
-  name: v.optional(v.string()),
-  entityType: v.optional(entityTypeValidator),
-  locationId: v.optional(v.id('locations')),
-  lang: v.optional(languageValidator),
-  profileId: v.optional(v.id('profiles')),
-  enabled: v.boolean(),
-  hash: v.string(),
-  lastFetchAt: v.optional(v.number()),
-  etag: v.optional(v.string()),
-  lastModified: v.optional(v.string()),
-  notes: v.optional(v.string()),
-  updatedAt: v.number(),
-});
-
-export const profiles = defineTable({
-  sourceId: v.id('sources'),
-  lang: languageValidator,
-  config: v.any(), // config object used for the scrapper.
-  version: v.number(),
-  enabled: v.boolean(),
-  notes: v.optional(v.string()),
-  updatedAt: v.number(),
-});
+export const languageValidator = v.union(
+  ...Object.values(LANGUAGES).map(v.literal)
+);
 
 // ============================================================
 // USERS & ALERTS
@@ -102,13 +34,7 @@ export const users = defineTable({
   emailVerified: v.boolean(),
   profilePictureUrl: v.union(v.string(), v.null()),
   role: roleValidator, // User role: USER or ADMIN
-  // Home location
-  homeLat: v.optional(v.number()),
-  homeLng: v.optional(v.number()),
-  homeGeohash5: v.optional(v.string()),
-  homeCityId: v.optional(v.string()),
   // Preferences
-  kidsAges: v.optional(v.array(v.number())),
   preferredLocale: v.optional(languageValidator),
   prefs: v.optional(v.any()),
   // Mobile
@@ -116,27 +42,62 @@ export const users = defineTable({
   updatedAt: v.number(),
 });
 
+export const organisations = defineTable({
+  externalId: v.string(),
+  name: v.string(),
+  metadata: v.optional(
+    v.record(v.string(), v.union(v.string(), v.number(), v.null()))
+  ),
+  updatedAt: v.number(),
+});
+
+export const organisationDomains = defineTable({
+  organisationId: v.id("organisations"),
+  externalId: v.string(),
+  domain: v.string(),
+  status: v.union(
+    v.literal("verified"),
+    v.literal("pending"),
+    v.literal("failed")
+  ),
+  updatedAt: v.number(),
+});
+
+export const organizationMemberships = defineTable({
+  organizationId: v.string(), // WorkOS Org ID
+  userId: v.string(), // WorkOS User ID
+  role: v.optional(v.string()), // Role slug
+  status: v.string(), // active, pending, etc.
+  updatedAt: v.number(),
+});
+
+export const syncStatus = defineTable({
+  entityType: v.union(v.literal("user"), v.literal("organisation")),
+  entityId: v.string(), // WorkOS External ID
+  targetSystem: v.literal("planetscale"),
+  status: v.union(
+    v.literal("pending"),
+    v.literal("success"),
+    v.literal("failed")
+  ),
+  lastSyncedAt: v.number(),
+  error: v.optional(v.string()),
+});
+
 export default defineSchema({
-  // Normalized locations for multi-country support
-  locations: locations
-    .index('by_country', ['country'])
-    .index('by_country_region', ['country', 'region'])
-    .index('by_external', ['externalId'])
-    .index('slugName', ['slugName'])
-    .searchIndex('search_city', {
-      searchField: 'subRegion',
-      filterFields: ['country'],
-      staged: false,
-    }),
-
-  sources: sources
-    .index('by_enabled', ['enabled'])
-    .index('by_domain', ['domain'])
-    .index('by_location', ['locationId'])
-    .index('by_hash', ['hash']),
-
-  // Per-site crawler configuration (YAML-style, stored as JSON)
-  profiles: profiles.index('by_source', ['sourceId']).index('by_enabled', ['enabled']),
-
-  users: users.index('by_external_id', ['externalId']).index('by_email', ['email']),
+  users: users
+    .index("by_external_id", ["externalId"])
+    .index("by_email", ["email"]),
+  organisations: organisations.index("externalId", ["externalId"]),
+  organisationDomains: organisationDomains
+    .index("organisationId", ["organisationId"])
+    .index("externalId", ["externalId"])
+    .index("domain", ["domain"]),
+  organizationMemberships: organizationMemberships
+    .index("by_org", ["organizationId"])
+    .index("by_user", ["userId"])
+    .index("by_org_user", ["organizationId", "userId"]),
+  syncStatus: syncStatus
+    .index("by_entity", ["entityType", "entityId"])
+    .index("by_status", ["status"]),
 });
