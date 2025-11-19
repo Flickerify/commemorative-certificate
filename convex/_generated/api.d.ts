@@ -12,11 +12,11 @@ import type * as controllers_workosWebhooksController from "../controllers/worko
 import type * as env from "../env.js";
 import type * as functions from "../functions.js";
 import type * as http from "../http.js";
-import type * as memberships_internal_mutation from "../memberships/internal/mutation.js";
 import type * as organisationDomains_internal_mutation from "../organisationDomains/internal/mutation.js";
 import type * as organisations_internal_mutation from "../organisations/internal/mutation.js";
 import type * as organisations_internal_query from "../organisations/internal/query.js";
 import type * as organisations_query from "../organisations/query.js";
+import type * as organizationMemberships_internal_mutation from "../organizationMemberships/internal/mutation.js";
 import type * as planetscale_internal_action from "../planetscale/internal/action.js";
 import type * as scripts_backfillSync from "../scripts/backfillSync.js";
 import type * as sync_query from "../sync/query.js";
@@ -47,11 +47,11 @@ declare const fullApi: ApiFromModules<{
   env: typeof env;
   functions: typeof functions;
   http: typeof http;
-  "memberships/internal/mutation": typeof memberships_internal_mutation;
   "organisationDomains/internal/mutation": typeof organisationDomains_internal_mutation;
   "organisations/internal/mutation": typeof organisations_internal_mutation;
   "organisations/internal/query": typeof organisations_internal_query;
   "organisations/query": typeof organisations_query;
+  "organizationMemberships/internal/mutation": typeof organizationMemberships_internal_mutation;
   "planetscale/internal/action": typeof planetscale_internal_action;
   "scripts/backfillSync": typeof scripts_backfillSync;
   "sync/query": typeof sync_query;

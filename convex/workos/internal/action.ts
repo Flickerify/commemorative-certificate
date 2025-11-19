@@ -1,9 +1,9 @@
-"use node";
+'use node';
 
-import { v } from "convex/values";
+import { v } from 'convex/values';
 
-import { WorkOS } from "@workos-inc/node";
-import { internalAction } from "../../functions";
+import { WorkOS } from '@workos-inc/node';
+import { internalAction } from '../../functions';
 
 /**
  * Verify a WorkOS webhook event.

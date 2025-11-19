@@ -20,7 +20,6 @@ export type PublicMutationCtx = CustomCtx<typeof publicMutation>;
 export type InternalMutationCtx = CustomCtx<typeof internalMutation>;
 export type InternalActionCtx = CustomCtx<typeof internalAction>;
 export type InternalQueryCtx = CustomCtx<typeof internalQuery>;
-
 export type ProtectedQueryCtx = CustomCtx<typeof protectedQuery>;
 export type ProtectedMutationCtx = CustomCtx<typeof protectedMutation>;
 export type ProtectedActionCtx = CustomCtx<typeof protectedAction>;

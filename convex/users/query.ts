@@ -1,4 +1,4 @@
-import { protectedQuery } from "../functions";
+import { protectedQuery } from '../functions';
 
 export const me = protectedQuery({
   args: {},
