@@ -4,7 +4,13 @@ import { AppSidebar } from '@/components/app-sidebar';
 import { SiteHeader } from '@/components/site-header';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { SidebarInset, SidebarProvider } from '@/components/ui/sidebar';
-import { UsersManagement, OrganizationSwitcher, WorkOsWidgets } from '@workos-inc/widgets';
+import {
+  UsersManagement,
+  OrganizationSwitcher,
+  WorkOsWidgets,
+  AdminPortalDomainVerification,
+  AdminPortalSsoConnection,
+} from '@workos-inc/widgets';
 import { useAccessToken } from '@workos-inc/authkit-nextjs/components';
 import { switchToOrganization } from '@workos-inc/authkit-nextjs';
 
@@ -64,6 +70,26 @@ export default function OrganizationPage() {
               </CardHeader>
               <CardContent>
                 <UsersManagement authToken={accessToken} />
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader>
+                <CardTitle>Domain Verification</CardTitle>
+                <CardDescription>Verify your organization's domain</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <AdminPortalDomainVerification authToken={accessToken} />
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader>
+                <CardTitle>SSO Connection</CardTitle>
+                <CardDescription>Manage your organization's SSO connections</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <AdminPortalSsoConnection authToken={accessToken} />
               </CardContent>
             </Card>
           </div>
