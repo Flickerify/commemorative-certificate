@@ -70,7 +70,7 @@ After deployment, create separate PR to:
 
 - Move `changes/[name]/` → `changes/archive/YYYY-MM-DD-[name]/`
 - Update `specs/` if capabilities changed
-- Use `openspec archive [change] --skip-specs --yes` for tooling-only changes
+- Use `openspec archive <change-id> --skip-specs --yes` for tooling-only changes (always pass the change ID explicitly)
 - Run `openspec validate --strict` to confirm the archived change passes checks
 
 ## Before Any Task
@@ -108,9 +108,8 @@ After deployment, create separate PR to:
 openspec list                  # List active changes
 openspec list --specs          # List specifications
 openspec show [item]           # Display change or spec
-openspec diff [change]         # Show spec differences
 openspec validate [item]       # Validate changes or specs
-openspec archive [change] [--yes|-y]      # Archive after deployment (add --yes for non-interactive runs)
+openspec archive <change-id> [--yes|-y]   # Archive after deployment (add --yes for non-interactive runs)
 
 # Project management
 openspec init [path]           # Initialize OpenSpec
@@ -175,6 +174,8 @@ New request?
 2. **Write proposal.md:**
 
 ```markdown
+# Change: [Brief description of change]
+
 ## Why
 
 [1-2 sentences on problem/opportunity]
@@ -514,9 +515,8 @@ Only add complexity with:
 ```bash
 openspec list              # What's in progress?
 openspec show [item]       # View details
-openspec diff [change]     # What's changing?
 openspec validate --strict # Is it correct?
-openspec archive [change] [--yes|-y]  # Mark complete (add --yes for automation)
+openspec archive <change-id> [--yes|-y]  # Mark complete (add --yes for automation)
 ```
 
 Remember: Specs are truth. Changes are proposals. Keep them in sync.
