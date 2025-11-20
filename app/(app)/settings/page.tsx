@@ -1,7 +1,4 @@
-import { AppSidebar } from '@/components/app-sidebar';
-import { SiteHeader } from '@/components/site-header';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { SidebarInset, SidebarProvider } from '@/components/ui/sidebar';
 
 export default function SettingsPage() {
   return (

@@ -6,7 +6,7 @@ export const upsertFromWorkos = internalMutation({
     organizationId: v.string(),
     userId: v.string(),
     role: v.optional(v.string()),
-    status: v.string(),
+    status: v.union(v.literal('active'), v.literal('pending'), v.literal('inactive')),
   },
   handler: async (ctx, args) => {
     const existing = await ctx.db

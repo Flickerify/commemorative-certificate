@@ -1,38 +1,30 @@
-import { v } from 'convex/values';
 import { protectedQuery } from '../functions';
-import { parse } from 'tldts';
 
-export const getOrganisationByEmail = protectedQuery({
-  args: {
-    email: v.string(),
-  },
-  async handler(ctx, { email }) {
-    const identity = await ctx.auth.getUserIdentity();
-    if (!identity) {
+export const getOrganisationsByUserId = protectedQuery({
+  args: {},
+  async handler(ctx) {
+    const organisationMemberships = await ctx.db
+      .query('organizationMemberships')
+      .withIndex('by_user', (q) => q.eq('userId', ctx.user.externalId))
+      .collect();
+
+    if (!organisationMemberships) {
       return null;
     }
 
-    const parsedUrl = parse(email);
-    const domain = parsedUrl.domain;
+    const organisations = await Promise.all(
+      organisationMemberships.map(async (membership) => {
+        const organisation = await ctx.db
+          .query('organisations')
+          .withIndex('externalId', (q) => q.eq('externalId', membership.organizationId))
+          .first();
 
-    if (!domain) {
-      return null;
-    }
+        if (organisation) {
+          return { ...organisation, role: membership.role };
+        }
+      }),
+    );
 
-    const organisationDomain = await ctx.db
-      .query('organisationDomains')
-      .withIndex('domain', (q) => q.eq('domain', domain))
-      .first();
-
-    if (!organisationDomain) {
-      return null;
-    }
-
-    const organisation = await ctx.db
-      .query('organisations')
-      .withIndex('by_id', (q) => q.eq('_id', organisationDomain.organisationId))
-      .first();
-
-    return organisation;
+    return organisations.filter((organisation) => organisation !== null && organisation !== undefined);
   },
 });

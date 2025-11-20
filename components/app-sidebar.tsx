@@ -9,7 +9,6 @@ import {
   IconDashboard,
   IconFileCheck,
   IconHelp,
-  IconInnerShadowTop,
   IconPlug,
   IconSettings,
   IconTemplate,
@@ -23,15 +22,8 @@ import { NavDocuments } from '@/components/nav-documents';
 import { NavMain } from '@/components/nav-main';
 import { NavSecondary } from '@/components/nav-secondary';
 import { NavUser } from '@/components/nav-user';
-import {
-  Sidebar,
-  SidebarContent,
-  SidebarFooter,
-  SidebarHeader,
-  SidebarMenu,
-  SidebarMenuButton,
-  SidebarMenuItem,
-} from '@/components/ui/sidebar';
+import { OrganizationSwitcher } from '@/components/organization-switcher';
+import { Sidebar, SidebarContent, SidebarFooter, SidebarHeader } from '@/components/ui/sidebar';
 
 const navMain = [
   {
@@ -99,10 +91,7 @@ const documents = [
 
 export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
   const { user, signOut } = useAuth();
-  const organisation = useQuery(
-    api.organisations.query.getOrganisationByEmail,
-    user?.email ? { email: user.email } : 'skip',
-  );
+  const organisations = useQuery(api.organisations.query.getOrganisationsByUserId);
 
   const userData = React.useMemo(() => {
     if (!user) return { name: 'Guest', email: '', avatar: '' };
@@ -116,22 +105,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
   return (
     <Sidebar collapsible="icon" {...props}>
       <SidebarHeader>
-        <SidebarMenu>
-          <SidebarMenuItem>
-            <SidebarMenuButton
-              size="lg"
-              className="data-[state=open]:bg-sidebar-accent data-[state=open]:text-sidebar-accent-foreground"
-            >
-              <div className="flex aspect-square size-8 items-center justify-center rounded-lg bg-sidebar-primary text-sidebar-primary-foreground">
-                <IconInnerShadowTop className="size-4" />
-              </div>
-              <div className="grid flex-1 text-left text-sm leading-tight">
-                <span className="truncate font-semibold">{organisation?.name || 'Certificate Manager'}</span>
-                <span className="truncate text-xs">Enterprise</span>
-              </div>
-            </SidebarMenuButton>
-          </SidebarMenuItem>
-        </SidebarMenu>
+        <OrganizationSwitcher organisations={organisations} />
       </SidebarHeader>
       <SidebarContent>
         <NavMain items={navMain} />
