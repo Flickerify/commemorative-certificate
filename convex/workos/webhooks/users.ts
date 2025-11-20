@@ -11,6 +11,30 @@ export async function handleUserWebhooks(ctx: Context<HttpHonoEnv>) {
   try {
     switch (event.event) {
       case 'user.created':
+        await ctx.env.runMutation(internal.users.internal.mutation.upsertFromWorkos, {
+          externalId: event.data.id,
+          email: event.data.email,
+          emailVerified: event.data.emailVerified,
+          firstName: event.data.firstName,
+          lastName: event.data.lastName,
+          profilePictureUrl: event.data.profilePictureUrl,
+          role: ROLES.USER,
+          updatedAt: new Date().getTime(),
+        });
+
+        // Trigger PlanetScale sync
+        await ctx.env.runAction(internal.workflows.syncUserToPlanetScale.run, {
+          id: event.data.id,
+          email: event.data.email,
+          firstName: event.data.firstName || undefined,
+          lastName: event.data.lastName || undefined,
+          profilePictureUrl: event.data.profilePictureUrl || undefined,
+        });
+
+        await ctx.env.runAction(internal.organisations.internal.action.createPersonalOrganizationWorkos, {
+          externalId: event.data.id,
+        });
+        break;
       case 'user.updated':
         await ctx.env.runMutation(internal.users.internal.mutation.upsertFromWorkos, {
           externalId: event.data.id,

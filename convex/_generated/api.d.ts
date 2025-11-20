@@ -13,6 +13,7 @@ import type * as env from "../env.js";
 import type * as functions from "../functions.js";
 import type * as http from "../http.js";
 import type * as organisationDomains_internal_mutation from "../organisationDomains/internal/mutation.js";
+import type * as organisations_internal_action from "../organisations/internal/action.js";
 import type * as organisations_internal_mutation from "../organisations/internal/mutation.js";
 import type * as organisations_internal_query from "../organisations/internal/query.js";
 import type * as organisations_query from "../organisations/query.js";
@@ -48,6 +49,7 @@ declare const fullApi: ApiFromModules<{
   functions: typeof functions;
   http: typeof http;
   "organisationDomains/internal/mutation": typeof organisationDomains_internal_mutation;
+  "organisations/internal/action": typeof organisations_internal_action;
   "organisations/internal/mutation": typeof organisations_internal_mutation;
   "organisations/internal/query": typeof organisations_internal_query;
   "organisations/query": typeof organisations_query;

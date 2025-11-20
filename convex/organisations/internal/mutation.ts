@@ -1,44 +1,35 @@
-import { ConvexError, v } from "convex/values";
-import { internalMutation } from "../../functions";
-import { organisations, organisationDomains } from "../../schema";
+import { ConvexError, v } from 'convex/values';
+import { internalMutation } from '../../functions';
 
 export const upsertFromWorkos = internalMutation({
   args: {
     externalId: v.string(),
     name: v.string(),
-    metadata: v.optional(
-      v.record(v.string(), v.union(v.string(), v.number(), v.null()))
-    ),
+    metadata: v.optional(v.record(v.string(), v.union(v.string(), v.number(), v.null()))),
     domains: v.optional(
       v.array(
         v.object({
           externalId: v.string(),
           domain: v.string(),
-          status: v.union(
-            v.literal("verified"),
-            v.literal("pending"),
-            v.literal("failed")
-          ),
-        })
-      )
+          status: v.union(v.literal('verified'), v.literal('pending'), v.literal('failed')),
+        }),
+      ),
     ),
   },
   async handler(ctx, args) {
     const { domains, ...organisationArgs } = args;
     const organisation = await ctx.db
-      .query("organisations")
-      .withIndex("externalId", (q) =>
-        q.eq("externalId", organisationArgs.externalId)
-      )
+      .query('organisations')
+      .withIndex('externalId', (q) => q.eq('externalId', organisationArgs.externalId))
       .first();
 
     if (organisation === null) {
-      const organisationId = await ctx.db.insert("organisations", {
+      const organisationId = await ctx.db.insert('organisations', {
         ...organisationArgs,
         updatedAt: Date.now(),
       });
       for (const domain of domains ?? []) {
-        await ctx.db.insert("organisationDomains", {
+        await ctx.db.insert('organisationDomains', {
           ...domain,
           externalId: domain.externalId,
           status: domain.status,
@@ -53,10 +44,8 @@ export const upsertFromWorkos = internalMutation({
     await ctx.db.patch(organisation._id, organisationArgs);
 
     const existingDomains = await ctx.db
-      .query("organisationDomains")
-      .withIndex("organisationId", (q) =>
-        q.eq("organisationId", organisation._id)
-      )
+      .query('organisationDomains')
+      .withIndex('organisationId', (q) => q.eq('organisationId', organisation._id))
       .collect();
 
     for (const domain of existingDomains) {
@@ -73,7 +62,7 @@ export const upsertFromWorkos = internalMutation({
 
     for (const domain of domains ?? []) {
       if (!existingDomains.some((d) => d.domain === domain.domain)) {
-        await ctx.db.insert("organisationDomains", {
+        await ctx.db.insert('organisationDomains', {
           ...domain,
           externalId: domain.externalId,
           status: domain.status,
@@ -93,19 +82,17 @@ export const deleteFromWorkos = internalMutation({
   },
   async handler(ctx, { externalId }) {
     const organisation = await ctx.db
-      .query("organisations")
-      .withIndex("externalId", (q) => q.eq("externalId", externalId))
+      .query('organisations')
+      .withIndex('externalId', (q) => q.eq('externalId', externalId))
       .first();
 
     if (!organisation) {
-      throw new ConvexError("Organisation not found");
+      throw new ConvexError('Organisation not found');
     }
 
     const domains = await ctx.db
-      .query("organisationDomains")
-      .withIndex("organisationId", (q) =>
-        q.eq("organisationId", organisation._id)
-      )
+      .query('organisationDomains')
+      .withIndex('organisationId', (q) => q.eq('organisationId', organisation._id))
       .collect();
 
     for (const domain of domains) {

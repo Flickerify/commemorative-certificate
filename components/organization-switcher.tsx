@@ -1,6 +1,5 @@
 'use client';
 
-import * as React from 'react';
 import {
   IconBuildingBank,
   IconCheck,
@@ -9,9 +8,11 @@ import {
   IconSettings,
   IconSelector,
   IconUsers,
+  IconUser,
 } from '@tabler/icons-react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@workos-inc/authkit-nextjs/components';
+import { switchToOrganization } from '@workos-inc/authkit-nextjs';
 
 import {
   DropdownMenu,
@@ -22,18 +23,44 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { SidebarMenu, SidebarMenuButton, SidebarMenuItem, useSidebar } from '@/components/ui/sidebar';
-import type { OrganizationsWithRole } from '@/convex/types';
-import { switchToOrganization } from '@workos-inc/authkit-nextjs';
+import {
+  SidebarMenu,
+  SidebarMenuButton,
+  SidebarMenuItem,
+  useSidebar,
+  SidebarMenuSkeleton,
+} from '@/components/ui/sidebar';
+import { Doc } from '@/convex/_generated/dataModel';
 
-export function OrganizationSwitcher({ organisations }: { organisations: OrganizationsWithRole[] | null | undefined }) {
+type Organization = Doc<'organisations'> & { role?: string };
+
+export function OrganizationSwitcher({ organisations }: { organisations?: Organization[] | null }) {
   const { isMobile } = useSidebar();
   const router = useRouter();
   const { signOut, organizationId } = useAuth();
 
-  const handleSwitchToOrganization = (organizationId: string) => {
-    switchToOrganization(organizationId);
+  const handleSwitchToOrganization = (orgId: string) => {
+    switchToOrganization(orgId, {
+      returnTo: '/',
+      revalidationStrategy: 'path',
+      revalidationTags: ['organization-switcher'],
+    });
   };
+
+  // Show skeleton while loading organizations
+  if (organisations === undefined) {
+    return (
+      <SidebarMenu>
+        <SidebarMenuItem>
+          <SidebarMenuSkeleton showIcon />
+        </SidebarMenuItem>
+      </SidebarMenu>
+    );
+  }
+
+  // Determine current selection
+  const currentOrg = organisations?.find((org) => org.externalId === organizationId);
+  const personalOrg = organisations?.find((org) => org.metadata?.tier === 'personal');
 
   return (
     <SidebarMenu>
@@ -45,15 +72,11 @@ export function OrganizationSwitcher({ organisations }: { organisations: Organiz
               className="data-[state=open]:bg-sidebar-accent data-[state=open]:text-sidebar-accent-foreground"
             >
               <div className="flex aspect-square size-8 items-center justify-center rounded-lg bg-sidebar-primary text-sidebar-primary-foreground">
-                <IconBuildingBank className="size-4" />
+                {personalOrg ? <IconUser className="size-4" /> : <IconBuildingBank className="size-4" />}
               </div>
               <div className="grid flex-1 text-left text-sm leading-tight">
-                <span className="truncate font-semibold">
-                  {organisations?.find((org) => org.externalId === organizationId)?.name || 'Select Organization'}
-                </span>
-                <span className="truncate text-xs">
-                  {organisations?.find((org) => org.externalId === organizationId)?.role || 'Member'}
-                </span>
+                <span className="truncate font-semibold">{currentOrg?.name}</span>
+                <span className="truncate text-xs">{currentOrg?.role}</span>
               </div>
               <IconSelector className="ml-auto size-4" />
             </SidebarMenuButton>
@@ -65,19 +88,36 @@ export function OrganizationSwitcher({ organisations }: { organisations: Organiz
             sideOffset={4}
           >
             <DropdownMenuLabel className="text-xs text-muted-foreground">Organizations</DropdownMenuLabel>
-            {organisations?.map((org) => (
+            {/* Personal Account Option */}
+            {personalOrg && (
               <DropdownMenuItem
-                key={org._id}
-                onClick={() => handleSwitchToOrganization(org.externalId)}
                 className="gap-2 p-2"
+                onClick={() => handleSwitchToOrganization(personalOrg.externalId)}
               >
                 <div className="flex size-6 items-center justify-center rounded-sm border">
-                  <IconBuildingBank className="size-4 shrink-0" />
+                  <IconUser className="size-4 shrink-0" />
                 </div>
-                {org.name}
-                {organizationId === org.externalId && <IconCheck className="ml-auto size-4" />}
+                Personal Account
+                {personalOrg.externalId === organizationId && <IconCheck className="ml-auto size-4" />}
               </DropdownMenuItem>
-            ))}
+            )}
+
+            {organisations
+              ?.filter((org) => org.metadata?.tier !== 'personal')
+              .map((org) => (
+                <DropdownMenuItem
+                  key={org._id}
+                  onClick={() => handleSwitchToOrganization(org.externalId)}
+                  className="gap-2 p-2"
+                >
+                  <div className="flex size-6 items-center justify-center rounded-sm border">
+                    <IconBuildingBank className="size-4 shrink-0" />
+                  </div>
+                  {org.name}
+                  {organizationId === org.externalId && <IconCheck className="ml-auto size-4" />}
+                </DropdownMenuItem>
+              ))}
+
             <DropdownMenuSeparator />
             <DropdownMenuItem className="gap-2 p-2" onClick={() => router.push('/collaborators')}>
               <div className="flex size-6 items-center justify-center rounded-md border bg-background">
