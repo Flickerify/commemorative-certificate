@@ -38,7 +38,3 @@ export type HttpHonoEnv = {
   };
   Bindings: ActionCtx;
 };
-
-export type OrganizationsWithRole = Doc<'organisations'> & {
-  role: string | undefined;
-};

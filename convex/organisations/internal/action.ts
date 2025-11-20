@@ -1,10 +1,8 @@
 'use node';
 
 import { ConvexError, v } from 'convex/values';
-import { internal } from '../../_generated/api';
 import { internalAction } from '../../functions';
 import { WorkOS } from '@workos-inc/node';
-import { ROLES } from '../../schema';
 
 export const createPersonalOrganizationWorkos = internalAction({
   args: {

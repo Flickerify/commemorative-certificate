@@ -3,7 +3,6 @@ import { Context } from 'hono';
 
 import { internal } from '../../_generated/api';
 import type { HttpHonoEnv } from '../../types';
-import { ROLES } from '../../schema';
 
 export async function handleUserWebhooks(ctx: Context<HttpHonoEnv>) {
   const event = ctx.var.workosEvent;
@@ -18,7 +17,6 @@ export async function handleUserWebhooks(ctx: Context<HttpHonoEnv>) {
           firstName: event.data.firstName,
           lastName: event.data.lastName,
           profilePictureUrl: event.data.profilePictureUrl,
-          role: ROLES.USER,
           updatedAt: new Date().getTime(),
         });
 
@@ -43,7 +41,6 @@ export async function handleUserWebhooks(ctx: Context<HttpHonoEnv>) {
           firstName: event.data.firstName,
           lastName: event.data.lastName,
           profilePictureUrl: event.data.profilePictureUrl,
-          role: ROLES.USER,
           updatedAt: new Date().getTime(),
         });
 

@@ -1,5 +1,5 @@
-import { protectedAdminQuery } from "../../functions";
-import { ROLES } from "../../schema";
+import { protectedAdminQuery } from '../../functions';
+import { Roles } from '../../schema';
 
 /**
  * Check if current user is an admin
@@ -7,6 +7,6 @@ import { ROLES } from "../../schema";
  */
 export const isAdmin = protectedAdminQuery({
   async handler(ctx) {
-    return ctx.user.role === ROLES.ADMIN;
+    return ctx.user.role === 'admin';
   },
 });

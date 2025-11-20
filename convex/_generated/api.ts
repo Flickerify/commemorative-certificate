@@ -24,7 +24,6 @@ import type * as sync_query from "../sync/query.js";
 import type * as types_index from "../types/index.js";
 import type * as users_admin_mutation from "../users/admin/mutation.js";
 import type * as users_admin_query from "../users/admin/query.js";
-import type * as users_internal_action from "../users/internal/action.js";
 import type * as users_internal_mutation from "../users/internal/mutation.js";
 import type * as users_internal_query from "../users/internal/query.js";
 import type * as users_query from "../users/query.js";
@@ -42,8 +41,9 @@ import type {
   FilterApi,
   FunctionReference,
 } from "convex/server";
+import { anyApi, componentsGeneric } from "convex/server";
 
-declare const fullApi: ApiFromModules<{
+const fullApi: ApiFromModules<{
   "controllers/workosWebhooksController": typeof controllers_workosWebhooksController;
   env: typeof env;
   functions: typeof functions;
@@ -60,7 +60,6 @@ declare const fullApi: ApiFromModules<{
   "types/index": typeof types_index;
   "users/admin/mutation": typeof users_admin_mutation;
   "users/admin/query": typeof users_admin_query;
-  "users/internal/action": typeof users_internal_action;
   "users/internal/mutation": typeof users_internal_mutation;
   "users/internal/query": typeof users_internal_query;
   "users/query": typeof users_query;
@@ -72,7 +71,7 @@ declare const fullApi: ApiFromModules<{
   "workos/webhooks/middleware": typeof workos_webhooks_middleware;
   "workos/webhooks/organisations": typeof workos_webhooks_organisations;
   "workos/webhooks/users": typeof workos_webhooks_users;
-}>;
+}> = anyApi as any;
 
 /**
  * A utility for referencing Convex functions in your app's public API.
@@ -82,10 +81,10 @@ declare const fullApi: ApiFromModules<{
  * const myFunctionReference = api.myModule.myFunction;
  * ```
  */
-export declare const api: FilterApi<
+export const api: FilterApi<
   typeof fullApi,
   FunctionReference<any, "public">
->;
+> = anyApi as any;
 
 /**
  * A utility for referencing Convex functions in your app's internal API.
@@ -95,12 +94,12 @@ export declare const api: FilterApi<
  * const myFunctionReference = internal.myModule.myFunction;
  * ```
  */
-export declare const internal: FilterApi<
+export const internal: FilterApi<
   typeof fullApi,
   FunctionReference<any, "internal">
->;
+> = anyApi as any;
 
-export declare const components: {
+export const components = componentsGeneric() as unknown as {
   rateLimiter: {
     lib: {
       checkRateLimit: FunctionReference<

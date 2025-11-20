@@ -1,48 +1,29 @@
 import { defineSchema, defineTable } from 'convex/server';
-import { v } from 'convex/values';
+import { v, Infer } from 'convex/values';
 
-export const SYNC_STATUS = {
-  PENDING: 'pending',
-  SUCCESS: 'success',
-  FAILED: 'failed',
-} as const;
+export const syncStatusValidator = v.union(v.literal('pending'), v.literal('success'), v.literal('failed'));
 
-export const syncStatusValidator = v.union(...Object.values(SYNC_STATUS).map(v.literal));
-
-export const ORGANIZATION_DOMAIN_STATUS = {
-  VERIFIED: 'verified',
-  PENDING: 'pending',
-  FAILED: 'failed',
-} as const;
-
-export const organizationDomainStatusValidator = v.union(...Object.values(ORGANIZATION_DOMAIN_STATUS).map(v.literal));
-
-export const ORGANIZATION_MEMBERSHIP_STATUS = {
-  ACTIVE: 'active',
-  PENDING: 'pending',
-  INACTIVE: 'inactive',
-} as const;
-
-export const organizationMembershipStatusValidator = v.union(
-  ...Object.values(ORGANIZATION_MEMBERSHIP_STATUS).map(v.literal),
+export const organizationDomainStatusValidator = v.union(
+  v.literal('verified'),
+  v.literal('pending'),
+  v.literal('failed'),
 );
 
-export const ROLES = {
-  ADMIN: 'admin',
-  USER: 'user',
-} as const;
+export const organizationMembershipStatusValidator = v.union(
+  v.literal('active'),
+  v.literal('pending'),
+  v.literal('inactive'),
+);
 
-export const roleValidator = v.optional(v.union(...Object.values(ROLES).map(v.literal)));
+export const roleValidator = v.union(v.literal('admin'), v.literal('user'));
 
-export const LANGUAGES = {
-  DE: 'de',
-  FR: 'fr',
-  IT: 'it',
-  RM: 'rm',
-  EN: 'en',
-} as const;
-
-export const languageValidator = v.union(...Object.values(LANGUAGES).map(v.literal));
+export const languageValidator = v.union(
+  v.literal('de'),
+  v.literal('fr'),
+  v.literal('it'),
+  v.literal('rm'),
+  v.literal('en'),
+);
 
 // ============================================================
 // USERS & ALERTS
@@ -51,10 +32,10 @@ export const languageValidator = v.union(...Object.values(LANGUAGES).map(v.liter
 export const users = defineTable({
   email: v.string(),
   externalId: v.string(),
-  firstName: v.union(v.string(), v.null()),
-  lastName: v.union(v.string(), v.null()),
+  firstName: v.nullable(v.string()),
+  lastName: v.nullable(v.string()),
   emailVerified: v.boolean(),
-  profilePictureUrl: v.union(v.string(), v.null()),
+  profilePictureUrl: v.nullable(v.string()),
   role: roleValidator, // User role: USER or ADMIN
   // Preferences
   preferredLocale: v.optional(languageValidator),
@@ -109,3 +90,24 @@ export default defineSchema({
     .index('by_org_user', ['organizationId', 'userId']),
   syncStatus: syncStatus.index('by_entity', ['entityType', 'entityId']).index('by_status', ['status']),
 });
+
+export const user = users.validator;
+export type User = Infer<typeof user>;
+
+export const userWithoutRole = user.omit('role');
+export type UserWithoutRole = Infer<typeof userWithoutRole>;
+
+export const organization = organisations.validator;
+export type Organization = Infer<typeof organization>;
+
+export const organizationDomain = organisationDomains.validator;
+export type OrganizationDomain = Infer<typeof organizationDomain>;
+
+export const organizationMembership = organizationMemberships.validator;
+export type OrganizationMembership = Infer<typeof organizationMembership>;
+
+export type Roles = Infer<typeof roleValidator>;
+export type OrganizationDomainStatus = Infer<typeof organizationDomainStatusValidator>;
+export type OrganizationMembershipStatus = Infer<typeof organizationMembershipStatusValidator>;
+export type SyncStatus = Infer<typeof syncStatusValidator>;
+export type Languages = Infer<typeof languageValidator>;

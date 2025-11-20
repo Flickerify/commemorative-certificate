@@ -3,6 +3,8 @@
 import { ChartAreaInteractive } from '@/components/chart-area-interactive';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { IconAward, IconCheck, IconUsers, IconTrendingUp } from '@tabler/icons-react';
+import { useAuth } from '@workos-inc/authkit-nextjs/components';
+import { useRouter } from 'next/navigation';
 
 export default function Page() {
   return (

@@ -1,6 +1,6 @@
-import { ConvexError, v } from "convex/values";
-import { protectedAdminMutation } from "../../functions";
-import { ROLES, roleValidator } from "../../schema";
+import { ConvexError, v } from 'convex/values';
+import { protectedAdminMutation } from '../../functions';
+import { roleValidator } from '../../schema';
 
 /**
  * Set a user as admin by email (admin only)
@@ -13,16 +13,16 @@ export const setAdminByEmail = protectedAdminMutation({
   returns: v.null(),
   async handler(ctx, args) {
     const user = await ctx.db
-      .query("users")
-      .withIndex("by_email", (q) => q.eq("email", args.email))
+      .query('users')
+      .withIndex('by_email', (q) => q.eq('email', args.email))
       .first();
 
     if (!user) {
-      throw new ConvexError("User not found");
+      throw new ConvexError('User not found');
     }
 
     await ctx.db.patch(user._id, {
-      role: ROLES.ADMIN,
+      role: 'admin',
       updatedAt: Date.now(),
     });
 
@@ -35,13 +35,13 @@ export const setAdminByEmail = protectedAdminMutation({
  */
 export const updateUserRole = protectedAdminMutation({
   args: {
-    userId: v.id("users"),
+    userId: v.id('users'),
     role: roleValidator,
   },
   async handler(ctx, args) {
     const user = await ctx.db.get(args.userId);
     if (!user) {
-      throw new ConvexError("User not found");
+      throw new ConvexError('User not found');
     }
 
     await ctx.db.patch(args.userId, {

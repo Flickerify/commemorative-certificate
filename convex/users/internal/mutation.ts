@@ -1,9 +1,9 @@
 import { v } from 'convex/values';
 import { internalMutation } from '../../functions';
-import { users } from '../../schema';
+import { userWithoutRole } from '../../schema';
 
 export const upsertFromWorkos = internalMutation({
-  args: users.validator.fields,
+  args: userWithoutRole,
   async handler(ctx, args) {
     const user = await ctx.db
       .query('users')
@@ -11,12 +11,15 @@ export const upsertFromWorkos = internalMutation({
       .first();
 
     if (!user) {
-      return await ctx.db.insert('users', args);
+      return await ctx.db.insert('users', {
+        ...args,
+        role: 'user',
+      });
     }
     // Preserve existing role when updating
     await ctx.db.patch(user._id, {
       ...args,
-      role: args.role || user.role,
+      role: user.role,
     });
 
     return user._id;

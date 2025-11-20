@@ -15,7 +15,6 @@ import {
 
 import { getCurrentUserOrThrow } from './users/utils';
 import { internal } from './_generated/api';
-import { ROLES } from './schema';
 
 import { ConvexError } from 'convex/values';
 import { Doc } from './_generated/dataModel';
@@ -29,7 +28,7 @@ export const protectedAdminQuery = customQueryBuilder(
   baseQuery,
   customCtx(async (ctx) => {
     const user = await getCurrentUserOrThrow(ctx);
-    if (user.role !== ROLES.ADMIN) {
+    if (user.role !== 'admin') {
       throw new ConvexError('Only admins can access this resource');
     }
     return {
@@ -64,7 +63,7 @@ export const protectedAdminMutation = customMutationBuilder(
   baseMutation,
   customCtx(async (ctx) => {
     const user = await getCurrentUserOrThrow(ctx);
-    if (user.role !== ROLES.ADMIN) throw new ConvexError('Only admins can access this resource');
+    if (user.role !== 'admin') throw new ConvexError('Only admins can access this resource');
     return {
       ...ctx,
       user,
@@ -111,7 +110,7 @@ export const protectedAdminAction = customActionBuilder(
       externalId: identity.subject,
     });
     if (!user) throw new ConvexError('User not found');
-    if (user.role !== ROLES.ADMIN) throw new ConvexError('Only admins can access this resource');
+    if (user.role !== 'admin') throw new ConvexError('Only admins can access this resource');
     const finalUser = user as Doc<'users'>;
     return {
       ...ctx,
