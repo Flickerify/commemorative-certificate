@@ -12,7 +12,6 @@ import {
 } from '@tabler/icons-react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@workos-inc/authkit-nextjs/components';
-import { switchToOrganization } from '@workos-inc/authkit-nextjs';
 
 import {
   DropdownMenu,
@@ -37,14 +36,11 @@ type Organization = Doc<'organisations'> & { role?: string };
 export function OrganizationSwitcher({ organisations }: { organisations?: Organization[] | null }) {
   const { isMobile } = useSidebar();
   const router = useRouter();
-  const { signOut, organizationId } = useAuth();
+  const { signOut, organizationId, switchToOrganization } = useAuth();
 
-  const handleSwitchToOrganization = (orgId: string) => {
-    switchToOrganization(orgId, {
-      returnTo: '/',
-      revalidationStrategy: 'path',
-      revalidationTags: ['organization-switcher'],
-    });
+  const handleSwitchToOrganization = async (orgId: string) => {
+    await switchToOrganization(orgId);
+    router.refresh();
   };
 
   // Show skeleton while loading organizations
@@ -92,7 +88,7 @@ export function OrganizationSwitcher({ organisations }: { organisations?: Organi
             {personalOrg && (
               <DropdownMenuItem
                 className="gap-2 p-2"
-                onClick={() => handleSwitchToOrganization(personalOrg.externalId)}
+                onClick={async () => await handleSwitchToOrganization(personalOrg.externalId)}
               >
                 <div className="flex size-6 items-center justify-center rounded-sm border">
                   <IconUser className="size-4 shrink-0" />
@@ -107,7 +103,7 @@ export function OrganizationSwitcher({ organisations }: { organisations?: Organi
               .map((org) => (
                 <DropdownMenuItem
                   key={org._id}
-                  onClick={() => handleSwitchToOrganization(org.externalId)}
+                  onClick={async () => await handleSwitchToOrganization(org.externalId)}
                   className="gap-2 p-2"
                 >
                   <div className="flex size-6 items-center justify-center rounded-sm border">
