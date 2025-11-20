@@ -17,7 +17,7 @@ export const createPersonalOrganizationWorkos = internalAction({
     }
 
     const personalOrganization = await workos.organizations.createOrganization({
-      name: 'Personal',
+      name: `${workosUser.firstName ? `${workosUser.firstName}'s` : 'My'} Workspace`,
       metadata: {
         tier: 'personal',
       },
