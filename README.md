@@ -15,7 +15,7 @@ After the initial setup (<2 minutes) you'll have a working full-stack app using:
 1. Clone this repository and install dependencies:
 
    ```bash
-   npm install
+   bun install
    ```
 
 2. Set up your environment variables:
@@ -51,7 +51,7 @@ After the initial setup (<2 minutes) you'll have a working full-stack app using:
 5. Run the development server:
 
    ```bash
-   npm run dev
+   bun run dev
    ```
 
    This starts both the Next.js frontend and Convex backend in parallel
