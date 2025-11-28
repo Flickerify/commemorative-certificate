@@ -30,6 +30,7 @@ export async function handleOrganizationWebhooks(ctx: Context<HttpHonoEnv>) {
         await ctx.env.runMutation(internal.workflows.syncToPlanetScale.kickoffOrganizationSync, {
           workosId: event.data.id,
           convexId: convexId,
+          webhookEvent: 'organization.created',
           createdAt: new Date().getTime(),
           updatedAt: new Date().getTime(),
         });
@@ -53,6 +54,7 @@ export async function handleOrganizationWebhooks(ctx: Context<HttpHonoEnv>) {
         await ctx.env.runMutation(internal.workflows.syncToPlanetScale.kickoffOrganizationSync, {
           workosId: event.data.id,
           convexId: convexId,
+          webhookEvent: 'organization.updated',
           updatedAt: new Date().getTime(),
         });
         break;

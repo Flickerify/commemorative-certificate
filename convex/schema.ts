@@ -3,6 +3,16 @@ import { v, Infer } from 'convex/values';
 
 export const syncStatusValidator = v.union(v.literal('pending'), v.literal('success'), v.literal('failed'));
 
+export const webhookEventValidator = v.union(
+  v.literal('user.created'),
+  v.literal('user.updated'),
+  v.literal('organization.created'),
+  v.literal('organization.updated'),
+  v.literal('organization.deleted'),
+  v.literal('organization_domain.verified'),
+  v.literal('organization_domain.verification_failed'),
+);
+
 export const organizationDomainStatusValidator = v.union(
   v.literal('verified'),
   v.literal('pending'),
@@ -73,7 +83,11 @@ export const syncStatus = defineTable({
   entityId: v.string(), // WorkOS External ID
   targetSystem: v.literal('planetscale'),
   status: syncStatusValidator,
-  lastSyncedAt: v.number(),
+  webhookEvent: webhookEventValidator, // Which webhook triggered this sync
+  workflowId: v.string(), // Convex workflow ID
+  startedAt: v.number(), // When the workflow started
+  completedAt: v.optional(v.number()), // When the workflow completed
+  durationMs: v.optional(v.number()), // Total duration in milliseconds
   error: v.optional(v.string()),
 });
 
@@ -88,7 +102,10 @@ export default defineSchema({
     .index('by_org', ['organizationId'])
     .index('by_user', ['userId'])
     .index('by_org_user', ['organizationId', 'userId']),
-  syncStatus: syncStatus.index('by_entity', ['entityType', 'entityId']).index('by_status', ['status']),
+  syncStatus: syncStatus
+    .index('by_entity', ['entityType', 'entityId'])
+    .index('by_status', ['status'])
+    .index('by_workflow', ['workflowId']),
 });
 
 export const user = users.validator;
@@ -110,4 +127,5 @@ export type Roles = Infer<typeof roleValidator>;
 export type OrganizationDomainStatus = Infer<typeof organizationDomainStatusValidator>;
 export type OrganizationMembershipStatus = Infer<typeof organizationMembershipStatusValidator>;
 export type SyncStatus = Infer<typeof syncStatusValidator>;
+export type WebhookEvent = Infer<typeof webhookEventValidator>;
 export type Languages = Infer<typeof languageValidator>;

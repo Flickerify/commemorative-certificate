@@ -28,6 +28,7 @@ export async function handleUserWebhooks(ctx: Context<HttpHonoEnv>) {
           workosId: event.data.id,
           convexId: convexId,
           email: event.data.email,
+          webhookEvent: 'user.created',
           createdAt: new Date().getTime(),
           updatedAt: new Date().getTime(),
         });
@@ -53,6 +54,7 @@ export async function handleUserWebhooks(ctx: Context<HttpHonoEnv>) {
           workosId: event.data.id,
           convexId: convexId,
           email: event.data.email,
+          webhookEvent: 'user.updated',
           updatedAt: new Date().getTime(),
         });
         break;

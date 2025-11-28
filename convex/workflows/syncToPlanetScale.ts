@@ -1,10 +1,12 @@
-import { WorkflowManager, WorkflowId } from '@convex-dev/workflow';
+import { WorkflowManager, WorkflowId, vWorkflowId } from '@convex-dev/workflow';
+import { vResultValidator } from '@convex-dev/workpool';
 import { components, internal } from '../_generated/api';
-import { internalMutation } from '../functions';
+import { internalMutation, protectedAdminQuery } from '../functions';
 import { v } from 'convex/values';
+import { webhookEventValidator } from '../schema';
 
 // Create workflow manager
-const workflow = new WorkflowManager(components.workflow);
+export const workflow = new WorkflowManager(components.workflow);
 
 // Retry configuration for PlanetScale sync
 const SYNC_RETRY_CONFIG = {
@@ -28,43 +30,11 @@ export const syncUser = workflow.define({
   handler: async (step, args): Promise<void> => {
     const { workosId, convexId, email, createdAt, updatedAt } = args;
 
-    // Log pending status
-    await step.runMutation(internal.workflows.syncToPlanetScale.logSyncStatus, {
-      entityType: 'user' as const,
-      entityId: workosId,
-      status: 'pending' as const,
-    });
-
-    try {
-      // Sync to PlanetScale with retry
-      await step.runAction(
-        internal.planetscale.internal.action.upsertUser,
-        {
-          id: workosId,
-          convexId,
-          email,
-          createdAt,
-          updatedAt,
-        },
-        { retry: SYNC_RETRY_CONFIG, name: 'upsert-user-planetscale' },
-      );
-
-      // Log success
-      await step.runMutation(internal.workflows.syncToPlanetScale.logSyncStatus, {
-        entityType: 'user' as const,
-        entityId: workosId,
-        status: 'success' as const,
-      });
-    } catch (error) {
-      // Log failure
-      await step.runMutation(internal.workflows.syncToPlanetScale.logSyncStatus, {
-        entityType: 'user' as const,
-        entityId: workosId,
-        status: 'failed' as const,
-        error: error instanceof Error ? error.message : 'Unknown error',
-      });
-      throw error;
-    }
+    await step.runAction(
+      internal.planetscale.internal.action.upsertUser,
+      { id: workosId, convexId, email, createdAt, updatedAt },
+      { retry: SYNC_RETRY_CONFIG, name: 'upsert-user-planetscale' },
+    );
   },
 });
 
@@ -82,82 +52,84 @@ export const syncOrganization = workflow.define({
   handler: async (step, args): Promise<void> => {
     const { workosId, convexId, createdAt, updatedAt } = args;
 
-    // Log pending status
-    await step.runMutation(internal.workflows.syncToPlanetScale.logSyncStatus, {
-      entityType: 'organization' as const,
-      entityId: workosId,
-      status: 'pending' as const,
-    });
-
-    try {
-      // Sync to PlanetScale with retry
-      await step.runAction(
-        internal.planetscale.internal.action.upsertOrganization,
-        {
-          id: workosId,
-          convexId,
-          createdAt,
-          updatedAt,
-        },
-        { retry: SYNC_RETRY_CONFIG, name: 'upsert-organization-planetscale' },
-      );
-
-      // Log success
-      await step.runMutation(internal.workflows.syncToPlanetScale.logSyncStatus, {
-        entityType: 'organization' as const,
-        entityId: workosId,
-        status: 'success' as const,
-      });
-    } catch (error) {
-      // Log failure
-      await step.runMutation(internal.workflows.syncToPlanetScale.logSyncStatus, {
-        entityType: 'organization' as const,
-        entityId: workosId,
-        status: 'failed' as const,
-        error: error instanceof Error ? error.message : 'Unknown error',
-      });
-      throw error;
-    }
+    await step.runAction(
+      internal.planetscale.internal.action.upsertOrganization,
+      { id: workosId, convexId, createdAt, updatedAt },
+      { retry: SYNC_RETRY_CONFIG, name: 'upsert-organization-planetscale' },
+    );
   },
 });
 
 // ============================================================
-// SHARED SYNC STATUS LOGGING
+// WORKFLOW COMPLETION HANDLER
 // ============================================================
 
-export const logSyncStatus = internalMutation({
+export const handleSyncComplete = internalMutation({
   args: {
-    entityType: v.union(v.literal('user'), v.literal('organization')),
-    entityId: v.string(),
-    status: v.union(v.literal('pending'), v.literal('success'), v.literal('failed')),
-    error: v.optional(v.string()),
+    workflowId: vWorkflowId,
+    result: vResultValidator,
+    context: v.object({
+      entityType: v.union(v.literal('user'), v.literal('organization')),
+      entityId: v.string(),
+      startedAt: v.number(),
+    }),
   },
   returns: v.null(),
   handler: async (ctx, args) => {
-    const { entityType, entityId, status, error } = args;
-    const existing = await ctx.db
-      .query('syncStatus')
-      .withIndex('by_entity', (q) => q.eq('entityType', entityType).eq('entityId', entityId))
-      .first();
+    const { startedAt } = args.context;
+    const completedAt = Date.now();
+    const durationMs = completedAt - startedAt;
 
-    if (existing) {
-      await ctx.db.patch(existing._id, {
-        status,
-        lastSyncedAt: Date.now(),
-        error,
-      });
-    } else {
-      await ctx.db.insert('syncStatus', {
-        entityType,
-        entityId,
-        targetSystem: 'planetscale',
-        status,
-        lastSyncedAt: Date.now(),
-        error,
+    // Find by workflowId to update the correct record
+    const syncRecord = await ctx.db
+      .query('syncStatus')
+      .withIndex('by_workflow', (q) => q.eq('workflowId', args.workflowId))
+      .unique();
+
+    const isSuccess = args.result.kind === 'success';
+    const errorMessage = 'error' in args.result ? (args.result as { error?: string }).error : undefined;
+
+    if (syncRecord) {
+      await ctx.db.patch(syncRecord._id, {
+        completedAt,
+        durationMs,
+        status: isSuccess ? ('success' as const) : ('failed' as const),
+        error: errorMessage,
       });
     }
 
     return null;
+  },
+});
+
+// ============================================================
+// SYNC STATUS INITIALIZATION
+// ============================================================
+
+export const initSyncStatus = internalMutation({
+  args: {
+    entityType: v.union(v.literal('user'), v.literal('organization')),
+    entityId: v.string(),
+    webhookEvent: webhookEventValidator,
+    workflowId: v.string(),
+    startedAt: v.number(),
+  },
+  returns: v.id('syncStatus'),
+  handler: async (ctx, args) => {
+    const { entityType, entityId, webhookEvent, workflowId, startedAt } = args;
+
+    // Always create a new record to keep history
+    const syncId = await ctx.db.insert('syncStatus', {
+      entityType,
+      entityId,
+      targetSystem: 'planetscale',
+      status: 'pending',
+      webhookEvent,
+      workflowId,
+      startedAt,
+    });
+
+    return syncId;
   },
 });
 
@@ -170,16 +142,41 @@ export const kickoffUserSync = internalMutation({
     workosId: v.string(),
     convexId: v.id('users'),
     email: v.string(),
+    webhookEvent: v.union(v.literal('user.created'), v.literal('user.updated')),
     createdAt: v.optional(v.number()),
     updatedAt: v.number(),
   },
   returns: v.string(),
   handler: async (ctx, args): Promise<string> => {
+    const startedAt = Date.now();
     const workflowId: WorkflowId = await workflow.start(
       ctx,
       internal.workflows.syncToPlanetScale.syncUser,
-      args,
+      {
+        workosId: args.workosId,
+        convexId: args.convexId,
+        email: args.email,
+        createdAt: args.createdAt,
+        updatedAt: args.updatedAt,
+      },
+      {
+        onComplete: internal.workflows.syncToPlanetScale.handleSyncComplete,
+        context: {
+          entityType: 'user' as const,
+          entityId: args.workosId,
+          startedAt,
+        },
+      },
     );
+
+    await ctx.runMutation(internal.workflows.syncToPlanetScale.initSyncStatus, {
+      entityType: 'user',
+      entityId: args.workosId,
+      webhookEvent: args.webhookEvent,
+      workflowId,
+      startedAt,
+    });
+
     return workflowId;
   },
 });
@@ -188,16 +185,53 @@ export const kickoffOrganizationSync = internalMutation({
   args: {
     workosId: v.string(),
     convexId: v.id('organizations'),
+    webhookEvent: v.union(v.literal('organization.created'), v.literal('organization.updated')),
     createdAt: v.optional(v.number()),
     updatedAt: v.number(),
   },
   returns: v.string(),
   handler: async (ctx, args): Promise<string> => {
+    const startedAt = Date.now();
     const workflowId: WorkflowId = await workflow.start(
       ctx,
       internal.workflows.syncToPlanetScale.syncOrganization,
-      args,
+      {
+        workosId: args.workosId,
+        convexId: args.convexId,
+        createdAt: args.createdAt,
+        updatedAt: args.updatedAt,
+      },
+      {
+        onComplete: internal.workflows.syncToPlanetScale.handleSyncComplete,
+        context: {
+          entityType: 'organization' as const,
+          entityId: args.workosId,
+          startedAt,
+        },
+      },
     );
+
+    await ctx.runMutation(internal.workflows.syncToPlanetScale.initSyncStatus, {
+      entityType: 'organization',
+      entityId: args.workosId,
+      webhookEvent: args.webhookEvent,
+      workflowId,
+      startedAt,
+    });
+
     return workflowId;
+  },
+});
+
+// ============================================================
+// ADMIN QUERIES
+// ============================================================
+
+export const getWorkflowStatus = protectedAdminQuery({
+  args: {
+    workflowId: v.string(),
+  },
+  handler: async (ctx, args) => {
+    return await workflow.status(ctx, args.workflowId as WorkflowId);
   },
 });
