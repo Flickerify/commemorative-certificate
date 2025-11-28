@@ -33,16 +33,16 @@ export const upsertUser = internalAction({
   },
 });
 
-export const upsertOrganisation = internalAction({
+export const upsertOrganization = internalAction({
   args: {
     id: v.string(),
-    convexId: v.id('organisations'),
+    convexId: v.id('organizations'),
     createdAt: v.optional(v.number()),
     updatedAt: v.number(),
   },
   handler: async (ctx, args) => {
     // await db
-    //   .insert(organisations)
+    //   .insert(organizations)
     //   .values({
     //     id: args.id,
     //     name: args.name,

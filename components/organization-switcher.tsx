@@ -31,9 +31,9 @@ import {
 } from '@/components/ui/sidebar';
 import { Doc } from '@/convex/_generated/dataModel';
 
-type Organization = Doc<'organisations'> & { role?: string };
+type Organization = Doc<'organizations'> & { role?: string };
 
-export function OrganizationSwitcher({ organisations }: { organisations?: Organization[] | null }) {
+export function OrganizationSwitcher({ organizations }: { organizations?: Organization[] | null }) {
   const { isMobile } = useSidebar();
   const router = useRouter();
   const { signOut, organizationId, switchToOrganization } = useAuth();
@@ -44,7 +44,7 @@ export function OrganizationSwitcher({ organisations }: { organisations?: Organi
   };
 
   // Show skeleton while loading organizations
-  if (organisations === undefined) {
+  if (organizations === undefined) {
     return (
       <SidebarMenu>
         <SidebarMenuItem>
@@ -55,8 +55,8 @@ export function OrganizationSwitcher({ organisations }: { organisations?: Organi
   }
 
   // Determine current selection
-  const currentOrg = organisations?.find((org) => org.externalId === organizationId);
-  const personalOrg = organisations?.find((org) => org.metadata?.tier === 'personal');
+  const currentOrg = organizations?.find((org) => org.externalId === organizationId);
+  const personalOrg = organizations?.find((org) => org.metadata?.tier === 'personal');
 
   return (
     <SidebarMenu>
@@ -98,7 +98,7 @@ export function OrganizationSwitcher({ organisations }: { organisations?: Organi
               </DropdownMenuItem>
             )}
 
-            {organisations
+            {organizations
               ?.filter((org) => org.metadata?.tier !== 'personal')
               .map((org) => (
                 <DropdownMenuItem

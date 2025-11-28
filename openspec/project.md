@@ -39,7 +39,7 @@ Flickerify is a full-stack application that provides user and organization manag
 ### Code Style
 
 - **TypeScript strict mode** enabled throughout
-- **British English spelling** for domain terms: `organisations`, `organisationDomains`
+- **British English spelling** for domain terms: `organizations`, `organizationDomains`
 - **Readonly props** for React components: `{ readonly children: ReactNode }`
 - **Single quotes** for strings, **trailing commas** enabled
 - **Explicit return validators** on all Convex functions

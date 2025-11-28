@@ -91,7 +91,7 @@ const documents = [
 
 export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
   const { user, signOut } = useAuth();
-  const organisations = useQuery(api.organisations.query.getOrganisationsByUserId);
+  const organizations = useQuery(api.organizations.query.getOrganizationsByUserId);
 
   const userData = React.useMemo(() => {
     if (!user) return { name: 'Guest', email: '', avatar: '' };
@@ -105,7 +105,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
   return (
     <Sidebar collapsible="icon" {...props}>
       <SidebarHeader>
-        <OrganizationSwitcher organisations={organisations} />
+        <OrganizationSwitcher organizations={organizations} />
       </SidebarHeader>
       <SidebarContent>
         <NavMain items={navMain} />

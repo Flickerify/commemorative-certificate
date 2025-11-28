@@ -6,14 +6,14 @@ import { Context } from 'hono';
 import { internal } from '../../_generated/api';
 import { Id } from '../../_generated/dataModel';
 
-export async function handleOrganisationWebhooks(ctx: Context<HttpHonoEnv>) {
+export async function handleOrganizationWebhooks(ctx: Context<HttpHonoEnv>) {
   const event = ctx.var.workosEvent;
-  let convexId: Id<'organisations'> ;
+  let convexId: Id<'organizations'> ;
 
   try {
     switch (event.event) {
       case 'organization.created':
-        convexId = await ctx.env.runMutation(internal.organisations.internal.mutation.upsertFromWorkos, {
+        convexId = await ctx.env.runMutation(internal.organizations.internal.mutation.upsertFromWorkos, {
           externalId: event.data.id,
           name: event.data.name,
           metadata: event.data.metadata,
@@ -27,7 +27,7 @@ export async function handleOrganisationWebhooks(ctx: Context<HttpHonoEnv>) {
         });
 
         // Trigger PlanetScale sync
-        await ctx.env.runAction(internal.workflows.syncOrganisationToPlanetScale.run, {
+        await ctx.env.runAction(internal.workflows.syncOrganizationToPlanetScale.run, {
           id: event.data.id,
           convexId: convexId,
           createdAt: new Date().getTime(),
@@ -35,7 +35,7 @@ export async function handleOrganisationWebhooks(ctx: Context<HttpHonoEnv>) {
         });
         break;
       case 'organization.updated':
-        convexId = await ctx.env.runMutation(internal.organisations.internal.mutation.upsertFromWorkos, {
+        convexId = await ctx.env.runMutation(internal.organizations.internal.mutation.upsertFromWorkos, {
           externalId: event.data.id,
           name: event.data.name,
           metadata: event.data.metadata,
@@ -49,26 +49,26 @@ export async function handleOrganisationWebhooks(ctx: Context<HttpHonoEnv>) {
         });
 
         // Trigger PlanetScale sync
-        await ctx.env.runAction(internal.workflows.syncOrganisationToPlanetScale.run, {
+        await ctx.env.runAction(internal.workflows.syncOrganizationToPlanetScale.run, {
           id: event.data.id,
           convexId: convexId,
           updatedAt: new Date().getTime(),
         });
         break;
       case 'organization.deleted': {
-        await ctx.env.runMutation(internal.organisations.internal.mutation.deleteFromWorkos, {
+        await ctx.env.runMutation(internal.organizations.internal.mutation.deleteFromWorkos, {
           externalId: event.data.id,
         });
         break;
       }
       case 'organization_domain.verified':
-        await ctx.env.runMutation(internal.organisationDomains.internal.mutation.updateFromWorkos, {
+        await ctx.env.runMutation(internal.organizationDomains.internal.mutation.updateFromWorkos, {
           externalId: event.data.id,
           status: 'verified',
         });
         break;
       case 'organization_domain.verification_failed':
-        await ctx.env.runMutation(internal.organisationDomains.internal.mutation.updateFromWorkos, {
+        await ctx.env.runMutation(internal.organizationDomains.internal.mutation.updateFromWorkos, {
           externalId: event.data.id,
           status: 'failed',
         });

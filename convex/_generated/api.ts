@@ -12,12 +12,12 @@ import type * as controllers_workosWebhooksController from "../controllers/worko
 import type * as env from "../env.js";
 import type * as functions from "../functions.js";
 import type * as http from "../http.js";
-import type * as organisationDomains_internal_mutation from "../organisationDomains/internal/mutation.js";
-import type * as organisations_internal_action from "../organisations/internal/action.js";
-import type * as organisations_internal_mutation from "../organisations/internal/mutation.js";
-import type * as organisations_internal_query from "../organisations/internal/query.js";
-import type * as organisations_query from "../organisations/query.js";
+import type * as organizationDomains_internal_mutation from "../organizationDomains/internal/mutation.js";
 import type * as organizationMemberships_internal_mutation from "../organizationMemberships/internal/mutation.js";
+import type * as organizations_internal_action from "../organizations/internal/action.js";
+import type * as organizations_internal_mutation from "../organizations/internal/mutation.js";
+import type * as organizations_internal_query from "../organizations/internal/query.js";
+import type * as organizations_query from "../organizations/query.js";
 import type * as planetscale_internal_action from "../planetscale/internal/action.js";
 import type * as sync_query from "../sync/query.js";
 import type * as types_index from "../types/index.js";
@@ -27,12 +27,12 @@ import type * as users_internal_mutation from "../users/internal/mutation.js";
 import type * as users_internal_query from "../users/internal/query.js";
 import type * as users_query from "../users/query.js";
 import type * as users_utils from "../users/utils.js";
-import type * as workflows_syncOrganisationToPlanetScale from "../workflows/syncOrganisationToPlanetScale.js";
+import type * as workflows_syncOrganizationToPlanetScale from "../workflows/syncOrganizationToPlanetScale.js";
 import type * as workflows_syncUserToPlanetScale from "../workflows/syncUserToPlanetScale.js";
 import type * as workos_internal_action from "../workos/internal/action.js";
 import type * as workos_webhooks_memberships from "../workos/webhooks/memberships.js";
 import type * as workos_webhooks_middleware from "../workos/webhooks/middleware.js";
-import type * as workos_webhooks_organisations from "../workos/webhooks/organisations.js";
+import type * as workos_webhooks_organizations from "../workos/webhooks/organizations.js";
 import type * as workos_webhooks_users from "../workos/webhooks/users.js";
 
 import type {
@@ -47,12 +47,12 @@ const fullApi: ApiFromModules<{
   env: typeof env;
   functions: typeof functions;
   http: typeof http;
-  "organisationDomains/internal/mutation": typeof organisationDomains_internal_mutation;
-  "organisations/internal/action": typeof organisations_internal_action;
-  "organisations/internal/mutation": typeof organisations_internal_mutation;
-  "organisations/internal/query": typeof organisations_internal_query;
-  "organisations/query": typeof organisations_query;
+  "organizationDomains/internal/mutation": typeof organizationDomains_internal_mutation;
   "organizationMemberships/internal/mutation": typeof organizationMemberships_internal_mutation;
+  "organizations/internal/action": typeof organizations_internal_action;
+  "organizations/internal/mutation": typeof organizations_internal_mutation;
+  "organizations/internal/query": typeof organizations_internal_query;
+  "organizations/query": typeof organizations_query;
   "planetscale/internal/action": typeof planetscale_internal_action;
   "sync/query": typeof sync_query;
   "types/index": typeof types_index;
@@ -62,12 +62,12 @@ const fullApi: ApiFromModules<{
   "users/internal/query": typeof users_internal_query;
   "users/query": typeof users_query;
   "users/utils": typeof users_utils;
-  "workflows/syncOrganisationToPlanetScale": typeof workflows_syncOrganisationToPlanetScale;
+  "workflows/syncOrganizationToPlanetScale": typeof workflows_syncOrganizationToPlanetScale;
   "workflows/syncUserToPlanetScale": typeof workflows_syncUserToPlanetScale;
   "workos/internal/action": typeof workos_internal_action;
   "workos/webhooks/memberships": typeof workos_webhooks_memberships;
   "workos/webhooks/middleware": typeof workos_webhooks_middleware;
-  "workos/webhooks/organisations": typeof workos_webhooks_organisations;
+  "workos/webhooks/organizations": typeof workos_webhooks_organizations;
   "workos/webhooks/users": typeof workos_webhooks_users;
 }> = anyApi as any;
 

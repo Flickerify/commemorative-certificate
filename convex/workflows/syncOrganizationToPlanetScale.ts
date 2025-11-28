@@ -6,7 +6,7 @@ import { internalAction } from '../_generated/server';
 export const run = internalAction({
   args: {
     id: v.string(), // WorkOS ID
-    convexId: v.id('organisations'),
+    convexId: v.id('organizations'),
     createdAt: v.optional(v.number()),
     updatedAt: v.number(),
   },
@@ -15,14 +15,14 @@ export const run = internalAction({
 
     try {
       // Log start
-      await ctx.runMutation(internal.workflows.syncOrganisationToPlanetScale.logSyncStatus, {
-        entityType: 'organisation',
+      await ctx.runMutation(internal.workflows.syncOrganizationToPlanetScale.logSyncStatus, {
+        entityType: 'organization',
         entityId: id,
         status: 'pending',
       });
 
       // Call PlanetScale action
-      await ctx.runAction(internal.planetscale.internal.action.upsertOrganisation, {
+      await ctx.runAction(internal.planetscale.internal.action.upsertOrganization, {
         id,
         convexId,
         createdAt,
@@ -30,15 +30,15 @@ export const run = internalAction({
       });
 
       // Log success
-      await ctx.runMutation(internal.workflows.syncOrganisationToPlanetScale.logSyncStatus, {
-        entityType: 'organisation',
+      await ctx.runMutation(internal.workflows.syncOrganizationToPlanetScale.logSyncStatus, {
+        entityType: 'organization',
         entityId: id,
         status: 'success',
       });
     } catch (error: any) {
       // Log failure
-      await ctx.runMutation(internal.workflows.syncOrganisationToPlanetScale.logSyncStatus, {
-        entityType: 'organisation',
+      await ctx.runMutation(internal.workflows.syncOrganizationToPlanetScale.logSyncStatus, {
+        entityType: 'organization',
         entityId: id,
         status: 'failed',
         error: error.message || 'Unknown error',
@@ -50,7 +50,7 @@ export const run = internalAction({
 
 export const logSyncStatus = internalMutation({
   args: {
-    entityType: v.union(v.literal('user'), v.literal('organisation')),
+    entityType: v.union(v.literal('user'), v.literal('organization')),
     entityId: v.string(),
     status: v.union(v.literal('pending'), v.literal('success'), v.literal('failed')),
     error: v.optional(v.string()),

@@ -45,15 +45,15 @@ export const users = defineTable({
   updatedAt: v.number(),
 });
 
-export const organisations = defineTable({
+export const organizations = defineTable({
   externalId: v.string(),
   name: v.string(),
   metadata: v.optional(v.record(v.string(), v.union(v.string(), v.number(), v.null()))),
   updatedAt: v.number(),
 });
 
-export const organisationDomains = defineTable({
-  organisationId: v.id('organisations'),
+export const organizationDomains = defineTable({
+  organizationId: v.id('organizations'),
   externalId: v.string(),
   domain: v.string(),
   status: organizationDomainStatusValidator,
@@ -69,7 +69,7 @@ export const organizationMemberships = defineTable({
 });
 
 export const syncStatus = defineTable({
-  entityType: v.union(v.literal('user'), v.literal('organisation')),
+  entityType: v.union(v.literal('user'), v.literal('organization')),
   entityId: v.string(), // WorkOS External ID
   targetSystem: v.literal('planetscale'),
   status: syncStatusValidator,
@@ -79,9 +79,9 @@ export const syncStatus = defineTable({
 
 export default defineSchema({
   users: users.index('by_external_id', ['externalId']).index('by_email', ['email']),
-  organisations: organisations.index('externalId', ['externalId']),
-  organisationDomains: organisationDomains
-    .index('organisationId', ['organisationId'])
+  organizations: organizations.index('externalId', ['externalId']),
+  organizationDomains: organizationDomains
+    .index('organizationId', ['organizationId'])
     .index('externalId', ['externalId'])
     .index('domain', ['domain']),
   organizationMemberships: organizationMemberships
@@ -97,10 +97,10 @@ export type User = Infer<typeof user>;
 export const userWithoutRole = user.omit('role');
 export type UserWithoutRole = Infer<typeof userWithoutRole>;
 
-export const organization = organisations.validator;
+export const organization = organizations.validator;
 export type Organization = Infer<typeof organization>;
 
-export const organizationDomain = organisationDomains.validator;
+export const organizationDomain = organizationDomains.validator;
 export type OrganizationDomain = Infer<typeof organizationDomain>;
 
 export const organizationMembership = organizationMemberships.validator;

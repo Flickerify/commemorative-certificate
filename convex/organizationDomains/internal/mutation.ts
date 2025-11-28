@@ -8,7 +8,7 @@ export const updateFromWorkos = internalMutation({
   },
   async handler(ctx, { externalId, status }) {
     const domain = await ctx.db
-      .query('organisationDomains')
+      .query('organizationDomains')
       .withIndex('externalId', (q) => q.eq('externalId', externalId))
       .first();
 

@@ -51,7 +51,7 @@ export const run = internalAction({
 
 export const logSyncStatus = internalMutation({
   args: {
-    entityType: v.union(v.literal('user'), v.literal('organisation')),
+    entityType: v.union(v.literal('user'), v.literal('organization')),
     entityId: v.string(),
     status: v.union(v.literal('pending'), v.literal('success'), v.literal('failed')),
     error: v.optional(v.string()),

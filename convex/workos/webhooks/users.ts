@@ -32,7 +32,7 @@ export async function handleUserWebhooks(ctx: Context<HttpHonoEnv>) {
           updatedAt: new Date().getTime(),
         });
 
-        await ctx.env.runAction(internal.organisations.internal.action.createPersonalOrganizationWorkos, {
+        await ctx.env.runAction(internal.organizations.internal.action.createPersonalOrganizationWorkos, {
           externalId: event.data.id,
         });
         break;
