@@ -19,7 +19,6 @@ import type * as organisations_internal_query from "../organisations/internal/qu
 import type * as organisations_query from "../organisations/query.js";
 import type * as organizationMemberships_internal_mutation from "../organizationMemberships/internal/mutation.js";
 import type * as planetscale_internal_action from "../planetscale/internal/action.js";
-import type * as scripts_backfillSync from "../scripts/backfillSync.js";
 import type * as sync_query from "../sync/query.js";
 import type * as types_index from "../types/index.js";
 import type * as users_admin_mutation from "../users/admin/mutation.js";
@@ -55,7 +54,6 @@ const fullApi: ApiFromModules<{
   "organisations/query": typeof organisations_query;
   "organizationMemberships/internal/mutation": typeof organizationMemberships_internal_mutation;
   "planetscale/internal/action": typeof planetscale_internal_action;
-  "scripts/backfillSync": typeof scripts_backfillSync;
   "sync/query": typeof sync_query;
   "types/index": typeof types_index;
   "users/admin/mutation": typeof users_admin_mutation;

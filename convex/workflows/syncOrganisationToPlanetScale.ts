@@ -6,12 +6,12 @@ import { internalAction } from '../_generated/server';
 export const run = internalAction({
   args: {
     id: v.string(), // WorkOS ID
-    name: v.string(),
-    slug: v.optional(v.string()),
-    metadata: v.optional(v.any()),
+    convexId: v.id('organisations'),
+    createdAt: v.optional(v.number()),
+    updatedAt: v.number(),
   },
   handler: async (ctx, args) => {
-    const { id, name, slug, metadata } = args;
+    const { id, convexId, createdAt, updatedAt } = args;
 
     try {
       // Log start
@@ -24,9 +24,9 @@ export const run = internalAction({
       // Call PlanetScale action
       await ctx.runAction(internal.planetscale.internal.action.upsertOrganisation, {
         id,
-        name,
-        slug,
-        metadata,
+        convexId,
+        createdAt,
+        updatedAt,
       });
 
       // Log success

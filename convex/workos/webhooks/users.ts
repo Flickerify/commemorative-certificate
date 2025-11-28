@@ -1,16 +1,19 @@
 import { ConvexError } from 'convex/values';
 import { Context } from 'hono';
+import { Id } from '../../_generated/dataModel';
 
 import { internal } from '../../_generated/api';
 import type { HttpHonoEnv } from '../../types';
 
 export async function handleUserWebhooks(ctx: Context<HttpHonoEnv>) {
   const event = ctx.var.workosEvent;
+  
+  let convexId: Id<'users'> ;
 
   try {
     switch (event.event) {
       case 'user.created':
-        await ctx.env.runMutation(internal.users.internal.mutation.upsertFromWorkos, {
+        convexId = await ctx.env.runMutation(internal.users.internal.mutation.upsertFromWorkos, {
           externalId: event.data.id,
           email: event.data.email,
           emailVerified: event.data.emailVerified,
@@ -23,10 +26,10 @@ export async function handleUserWebhooks(ctx: Context<HttpHonoEnv>) {
         // Trigger PlanetScale sync
         await ctx.env.runAction(internal.workflows.syncUserToPlanetScale.run, {
           id: event.data.id,
+          convexId: convexId,
           email: event.data.email,
-          firstName: event.data.firstName || undefined,
-          lastName: event.data.lastName || undefined,
-          profilePictureUrl: event.data.profilePictureUrl || undefined,
+          createdAt: new Date().getTime(),
+          updatedAt: new Date().getTime(),
         });
 
         await ctx.env.runAction(internal.organisations.internal.action.createPersonalOrganizationWorkos, {
@@ -34,7 +37,7 @@ export async function handleUserWebhooks(ctx: Context<HttpHonoEnv>) {
         });
         break;
       case 'user.updated':
-        await ctx.env.runMutation(internal.users.internal.mutation.upsertFromWorkos, {
+        convexId = await ctx.env.runMutation(internal.users.internal.mutation.upsertFromWorkos, {
           externalId: event.data.id,
           email: event.data.email,
           emailVerified: event.data.emailVerified,
@@ -48,9 +51,8 @@ export async function handleUserWebhooks(ctx: Context<HttpHonoEnv>) {
         await ctx.env.runAction(internal.workflows.syncUserToPlanetScale.run, {
           id: event.data.id,
           email: event.data.email,
-          firstName: event.data.firstName || undefined,
-          lastName: event.data.lastName || undefined,
-          profilePictureUrl: event.data.profilePictureUrl || undefined,
+          convexId: convexId,
+          updatedAt: new Date().getTime(),
         });
         break;
       case 'user.deleted': {

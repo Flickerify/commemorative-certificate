@@ -6,10 +6,9 @@ import { v } from 'convex/values';
 export const upsertUser = internalAction({
   args: {
     id: v.string(),
+    convexId: v.string(),
     email: v.string(),
-    firstName: v.optional(v.string()),
-    lastName: v.optional(v.string()),
-    profilePictureUrl: v.optional(v.string()),
+    updatedAt: v.number(),
   },
   handler: async (ctx, args) => {
     // await db
@@ -37,9 +36,9 @@ export const upsertUser = internalAction({
 export const upsertOrganisation = internalAction({
   args: {
     id: v.string(),
-    name: v.string(),
-    slug: v.optional(v.string()),
-    metadata: v.optional(v.any()),
+    convexId: v.id('organisations'),
+    createdAt: v.optional(v.number()),
+    updatedAt: v.number(),
   },
   handler: async (ctx, args) => {
     // await db

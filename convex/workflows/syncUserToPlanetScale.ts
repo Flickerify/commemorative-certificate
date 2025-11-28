@@ -6,13 +6,13 @@ import { internalAction } from '../_generated/server';
 export const run = internalAction({
   args: {
     id: v.string(), // WorkOS ID
+    convexId: v.id('users'), // Convex ID
     email: v.string(),
-    firstName: v.optional(v.string()),
-    lastName: v.optional(v.string()),
-    profilePictureUrl: v.optional(v.string()),
+    createdAt: v.optional(v.number()),
+    updatedAt: v.number(),
   },
   handler: async (ctx, args) => {
-    const { id, email, firstName, lastName, profilePictureUrl } = args;
+    const { id, email, convexId, updatedAt } = args;
 
     try {
       // Log start
@@ -26,9 +26,8 @@ export const run = internalAction({
       await ctx.runAction(internal.planetscale.internal.action.upsertUser, {
         id,
         email,
-        firstName,
-        lastName,
-        profilePictureUrl,
+        convexId,
+        updatedAt,
       });
 
       // Log success
