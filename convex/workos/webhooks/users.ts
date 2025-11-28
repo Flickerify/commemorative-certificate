@@ -7,8 +7,8 @@ import type { HttpHonoEnv } from '../../types';
 
 export async function handleUserWebhooks(ctx: Context<HttpHonoEnv>) {
   const event = ctx.var.workosEvent;
-  
-  let convexId: Id<'users'> ;
+
+  let convexId: Id<'users'>;
 
   try {
     switch (event.event) {
@@ -23,9 +23,9 @@ export async function handleUserWebhooks(ctx: Context<HttpHonoEnv>) {
           updatedAt: new Date().getTime(),
         });
 
-        // Trigger PlanetScale sync
-        await ctx.env.runAction(internal.workflows.syncUserToPlanetScale.run, {
-          id: event.data.id,
+        // Kick off PlanetScale sync workflow (with retry)
+        await ctx.env.runMutation(internal.workflows.syncToPlanetScale.kickoffUserSync, {
+          workosId: event.data.id,
           convexId: convexId,
           email: event.data.email,
           createdAt: new Date().getTime(),
@@ -36,6 +36,7 @@ export async function handleUserWebhooks(ctx: Context<HttpHonoEnv>) {
           externalId: event.data.id,
         });
         break;
+
       case 'user.updated':
         convexId = await ctx.env.runMutation(internal.users.internal.mutation.upsertFromWorkos, {
           externalId: event.data.id,
@@ -47,27 +48,29 @@ export async function handleUserWebhooks(ctx: Context<HttpHonoEnv>) {
           updatedAt: new Date().getTime(),
         });
 
-        // Trigger PlanetScale sync
-        await ctx.env.runAction(internal.workflows.syncUserToPlanetScale.run, {
-          id: event.data.id,
-          email: event.data.email,
+        // Kick off PlanetScale sync workflow (with retry)
+        await ctx.env.runMutation(internal.workflows.syncToPlanetScale.kickoffUserSync, {
+          workosId: event.data.id,
           convexId: convexId,
+          email: event.data.email,
           updatedAt: new Date().getTime(),
         });
         break;
+
       case 'user.deleted': {
         await ctx.env.runMutation(internal.users.internal.mutation.deleteFromWorkos, {
           externalId: event.data.id,
         });
         break;
       }
+
       default:
-        throw new ConvexError('Unsupported Clerk webhook event');
+        throw new ConvexError('Unsupported WorkOS user webhook event');
     }
 
     return new Response(null, { status: 200 });
   } catch (error) {
-    console.error('Error occured', error);
+    console.error('Error occurred', error);
     return new Response('Auth Webhook Error', {
       status: 400,
     });

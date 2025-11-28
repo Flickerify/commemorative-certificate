@@ -8,7 +8,7 @@ import { Id } from '../../_generated/dataModel';
 
 export async function handleOrganizationWebhooks(ctx: Context<HttpHonoEnv>) {
   const event = ctx.var.workosEvent;
-  let convexId: Id<'organizations'> ;
+  let convexId: Id<'organizations'>;
 
   try {
     switch (event.event) {
@@ -26,14 +26,15 @@ export async function handleOrganizationWebhooks(ctx: Context<HttpHonoEnv>) {
           }),
         });
 
-        // Trigger PlanetScale sync
-        await ctx.env.runAction(internal.workflows.syncOrganizationToPlanetScale.run, {
-          id: event.data.id,
+        // Kick off PlanetScale sync workflow (with retry)
+        await ctx.env.runMutation(internal.workflows.syncToPlanetScale.kickoffOrganizationSync, {
+          workosId: event.data.id,
           convexId: convexId,
           createdAt: new Date().getTime(),
           updatedAt: new Date().getTime(),
         });
         break;
+
       case 'organization.updated':
         convexId = await ctx.env.runMutation(internal.organizations.internal.mutation.upsertFromWorkos, {
           externalId: event.data.id,
@@ -48,38 +49,42 @@ export async function handleOrganizationWebhooks(ctx: Context<HttpHonoEnv>) {
           }),
         });
 
-        // Trigger PlanetScale sync
-        await ctx.env.runAction(internal.workflows.syncOrganizationToPlanetScale.run, {
-          id: event.data.id,
+        // Kick off PlanetScale sync workflow (with retry)
+        await ctx.env.runMutation(internal.workflows.syncToPlanetScale.kickoffOrganizationSync, {
+          workosId: event.data.id,
           convexId: convexId,
           updatedAt: new Date().getTime(),
         });
         break;
+
       case 'organization.deleted': {
         await ctx.env.runMutation(internal.organizations.internal.mutation.deleteFromWorkos, {
           externalId: event.data.id,
         });
         break;
       }
+
       case 'organization_domain.verified':
         await ctx.env.runMutation(internal.organizationDomains.internal.mutation.updateFromWorkos, {
           externalId: event.data.id,
           status: 'verified',
         });
         break;
+
       case 'organization_domain.verification_failed':
         await ctx.env.runMutation(internal.organizationDomains.internal.mutation.updateFromWorkos, {
           externalId: event.data.id,
           status: 'failed',
         });
         break;
+
       default:
-        throw new ConvexError('Unsupported webhook event');
+        throw new ConvexError('Unsupported WorkOS organization webhook event');
     }
 
     return new Response(null, { status: 200 });
   } catch (error) {
-    console.error('Error occured', error);
+    console.error('Error occurred', error);
     return new Response('Auth Webhook Error', {
       status: 400,
     });

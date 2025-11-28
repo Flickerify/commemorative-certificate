@@ -8,25 +8,23 @@ export const upsertUser = internalAction({
     id: v.string(),
     convexId: v.string(),
     email: v.string(),
+    createdAt: v.optional(v.number()),
     updatedAt: v.number(),
   },
   handler: async (ctx, args) => {
+    // const { id, convexId, email, createdAt, updatedAt } = args;
+
     // await db
     //   .insert(users)
     //   .values({
-    //     id: args.id,
-    //     email: args.email,
-    //     firstName: args.firstName || null,
-    //     lastName: args.lastName || null,
-    //     profilePictureUrl: args.profilePictureUrl || null,
+    //     workosId: id,
+    //     convexId: convexId,
+    //     createdAt: createdAt ? new Date(createdAt) : new Date(),
+    //     updatedAt: new Date(updatedAt),
     //   })
     //   .onDuplicateKeyUpdate({
     //     set: {
-    //       email: args.email,
-    //       firstName: args.firstName || null,
-    //       lastName: args.lastName || null,
-    //       profilePictureUrl: args.profilePictureUrl || null,
-    //       updatedAt: new Date(),
+    //       updatedAt: new Date(updatedAt),
     //     },
     //   });
     return { success: true };
@@ -41,20 +39,19 @@ export const upsertOrganization = internalAction({
     updatedAt: v.number(),
   },
   handler: async (ctx, args) => {
+    // const { id, convexId, createdAt, updatedAt } = args;
+
     // await db
     //   .insert(organizations)
     //   .values({
-    //     id: args.id,
-    //     name: args.name,
-    //     slug: args.slug || null,
-    //     metadata: args.metadata || null,
+    //     workosId: id,
+    //     convexId: convexId,
+    //     createdAt: createdAt ? new Date(createdAt) : new Date(),
+    //     updatedAt: new Date(updatedAt),
     //   })
     //   .onDuplicateKeyUpdate({
     //     set: {
-    //       name: args.name,
-    //       slug: args.slug || null,
-    //       metadata: args.metadata || null,
-    //       updatedAt: new Date(),
+    //       updatedAt: new Date(updatedAt),
     //     },
     //   });
     return { success: true };
