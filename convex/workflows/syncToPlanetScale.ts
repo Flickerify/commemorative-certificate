@@ -61,6 +61,60 @@ export const syncOrganization = workflow.define({
 });
 
 // ============================================================
+// USER DELETION WORKFLOW
+// ============================================================
+
+export const deleteUser = workflow.define({
+  args: {
+    workosId: v.string(),
+  },
+  handler: async (step, args): Promise<void> => {
+    const { workosId } = args;
+
+    // Step 1: Delete from PlanetScale
+    await step.runAction(
+      internal.planetscale.internal.action.deleteUser,
+      { workosId },
+      { retry: SYNC_RETRY_CONFIG, name: 'delete-user-planetscale' },
+    );
+
+    // Step 2: Delete from Convex (with cascade to memberships)
+    await step.runMutation(
+      internal.users.internal.mutation.deleteFromWorkos,
+      { externalId: workosId },
+      { name: 'delete-user-convex' },
+    );
+  },
+});
+
+// ============================================================
+// ORGANIZATION DELETION WORKFLOW
+// ============================================================
+
+export const deleteOrganization = workflow.define({
+  args: {
+    workosId: v.string(),
+  },
+  handler: async (step, args): Promise<void> => {
+    const { workosId } = args;
+
+    // Step 1: Delete from PlanetScale
+    await step.runAction(
+      internal.planetscale.internal.action.deleteOrganization,
+      { workosId },
+      { retry: SYNC_RETRY_CONFIG, name: 'delete-organization-planetscale' },
+    );
+
+    // Step 2: Delete from Convex (with cascade to domains and memberships)
+    await step.runMutation(
+      internal.organizations.internal.mutation.deleteFromWorkos,
+      { externalId: workosId },
+      { name: 'delete-organization-convex' },
+    );
+  },
+});
+
+// ============================================================
 // WORKFLOW COMPLETION HANDLER
 // ============================================================
 
@@ -215,6 +269,72 @@ export const kickoffOrganizationSync = internalMutation({
       entityType: 'organization',
       entityId: args.workosId,
       webhookEvent: args.webhookEvent,
+      workflowId,
+      startedAt,
+    });
+
+    return workflowId;
+  },
+});
+
+export const kickoffUserDeletion = internalMutation({
+  args: {
+    workosId: v.string(),
+  },
+  returns: v.string(),
+  handler: async (ctx, args): Promise<string> => {
+    const startedAt = Date.now();
+    const workflowId: WorkflowId = await workflow.start(
+      ctx,
+      internal.workflows.syncToPlanetScale.deleteUser,
+      { workosId: args.workosId },
+      {
+        onComplete: internal.workflows.syncToPlanetScale.handleSyncComplete,
+        context: {
+          entityType: 'user' as const,
+          entityId: args.workosId,
+          startedAt,
+        },
+      },
+    );
+
+    await ctx.runMutation(internal.workflows.syncToPlanetScale.initSyncStatus, {
+      entityType: 'user',
+      entityId: args.workosId,
+      webhookEvent: 'user.deleted',
+      workflowId,
+      startedAt,
+    });
+
+    return workflowId;
+  },
+});
+
+export const kickoffOrganizationDeletion = internalMutation({
+  args: {
+    workosId: v.string(),
+  },
+  returns: v.string(),
+  handler: async (ctx, args): Promise<string> => {
+    const startedAt = Date.now();
+    const workflowId: WorkflowId = await workflow.start(
+      ctx,
+      internal.workflows.syncToPlanetScale.deleteOrganization,
+      { workosId: args.workosId },
+      {
+        onComplete: internal.workflows.syncToPlanetScale.handleSyncComplete,
+        context: {
+          entityType: 'organization' as const,
+          entityId: args.workosId,
+          startedAt,
+        },
+      },
+    );
+
+    await ctx.runMutation(internal.workflows.syncToPlanetScale.initSyncStatus, {
+      entityType: 'organization',
+      entityId: args.workosId,
+      webhookEvent: 'organization.deleted',
       workflowId,
       startedAt,
     });

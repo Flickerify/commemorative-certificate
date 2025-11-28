@@ -6,6 +6,7 @@ export const syncStatusValidator = v.union(v.literal('pending'), v.literal('succ
 export const webhookEventValidator = v.union(
   v.literal('user.created'),
   v.literal('user.updated'),
+  v.literal('user.deleted'),
   v.literal('organization.created'),
   v.literal('organization.updated'),
   v.literal('organization.deleted'),

@@ -60,8 +60,9 @@ export async function handleUserWebhooks(ctx: Context<HttpHonoEnv>) {
         break;
 
       case 'user.deleted': {
-        await ctx.env.runMutation(internal.users.internal.mutation.deleteFromWorkos, {
-          externalId: event.data.id,
+        // Kick off deletion workflow (deletes from PlanetScale first, then Convex with cascade)
+        await ctx.env.runMutation(internal.workflows.syncToPlanetScale.kickoffUserDeletion, {
+          workosId: event.data.id,
         });
         break;
       }

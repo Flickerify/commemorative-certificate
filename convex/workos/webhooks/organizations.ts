@@ -60,8 +60,9 @@ export async function handleOrganizationWebhooks(ctx: Context<HttpHonoEnv>) {
         break;
 
       case 'organization.deleted': {
-        await ctx.env.runMutation(internal.organizations.internal.mutation.deleteFromWorkos, {
-          externalId: event.data.id,
+        // Kick off deletion workflow (deletes from PlanetScale first, then Convex with cascade)
+        await ctx.env.runMutation(internal.workflows.syncToPlanetScale.kickoffOrganizationDeletion, {
+          workosId: event.data.id,
         });
         break;
       }

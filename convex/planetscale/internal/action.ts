@@ -11,6 +11,7 @@ export const upsertUser = internalAction({
     createdAt: v.optional(v.number()),
     updatedAt: v.number(),
   },
+  returns: v.object({ success: v.boolean() }),
   handler: async (ctx, args) => {
     // const { id, convexId, email, createdAt, updatedAt } = args;
 
@@ -31,6 +32,21 @@ export const upsertUser = internalAction({
   },
 });
 
+export const deleteUser = internalAction({
+  args: {
+    workosId: v.string(),
+  },
+  returns: v.object({ success: v.boolean() }),
+  handler: async (ctx, args) => {
+    // const { workosId } = args;
+
+    // await db
+    //   .delete(users)
+    //   .where(eq(users.workosId, workosId));
+    return { success: true };
+  },
+});
+
 export const upsertOrganization = internalAction({
   args: {
     id: v.string(),
@@ -38,6 +54,7 @@ export const upsertOrganization = internalAction({
     createdAt: v.optional(v.number()),
     updatedAt: v.number(),
   },
+  returns: v.object({ success: v.boolean() }),
   handler: async (ctx, args) => {
     // const { id, convexId, createdAt, updatedAt } = args;
 
@@ -54,6 +71,21 @@ export const upsertOrganization = internalAction({
     //       updatedAt: new Date(updatedAt),
     //     },
     //   });
+    return { success: true };
+  },
+});
+
+export const deleteOrganization = internalAction({
+  args: {
+    workosId: v.string(),
+  },
+  returns: v.object({ success: v.boolean() }),
+  handler: async (ctx, args) => {
+    // const { workosId } = args;
+
+    // await db
+    //   .delete(organizations)
+    //   .where(eq(organizations.workosId, workosId));
     return { success: true };
   },
 });

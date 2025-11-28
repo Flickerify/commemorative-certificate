@@ -80,6 +80,7 @@ export const deleteFromWorkos = internalMutation({
   args: {
     externalId: v.string(),
   },
+  returns: v.null(),
   async handler(ctx, { externalId }) {
     const organization = await ctx.db
       .query('organizations')
@@ -87,9 +88,11 @@ export const deleteFromWorkos = internalMutation({
       .first();
 
     if (!organization) {
-      throw new ConvexError('Organization not found');
+      console.warn(`Can't delete organization, there is none for org ID: ${externalId}`);
+      return null;
     }
 
+    // Cascade: Delete all domains
     const domains = await ctx.db
       .query('organizationDomains')
       .withIndex('organizationId', (q) => q.eq('organizationId', organization._id))
@@ -99,8 +102,19 @@ export const deleteFromWorkos = internalMutation({
       await ctx.db.delete(domain._id);
     }
 
-    // TODO: Delete all documents including users related to the organization
+    // Cascade: Delete all memberships for this organization
+    const memberships = await ctx.db
+      .query('organizationMemberships')
+      .withIndex('by_org', (q) => q.eq('organizationId', externalId))
+      .collect();
 
+    for (const membership of memberships) {
+      await ctx.db.delete(membership._id);
+    }
+
+    // Delete the organization
     await ctx.db.delete(organization._id);
+
+    return null;
   },
 });

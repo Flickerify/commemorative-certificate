@@ -58,6 +58,7 @@ function formatRelativeTime(timestamp: number): string {
 type WebhookEvent =
   | 'user.created'
   | 'user.updated'
+  | 'user.deleted'
   | 'organization.created'
   | 'organization.updated'
   | 'organization.deleted'
@@ -117,9 +118,12 @@ function StatusBadge({ status }: { status: 'pending' | 'success' | 'failed' }) {
 
 function WebhookEventBadge({ event }: { event: WebhookEvent }) {
   const isCreated = event.endsWith('.created');
+  const isDeleted = event.endsWith('.deleted');
+
+  const variant = isDeleted ? 'destructive' : isCreated ? 'default' : 'secondary';
 
   return (
-    <Badge variant={isCreated ? 'default' : 'secondary'} className="gap-1 font-mono text-xs">
+    <Badge variant={variant} className="gap-1 font-mono text-xs">
       <IconWebhook className="size-3" />
       {event}
     </Badge>
@@ -264,7 +268,11 @@ function EntityCard({ group }: { group: EntityGroup }) {
             className="flex w-full items-center justify-between gap-4 p-4 text-left transition-colors hover:bg-muted/50"
           >
             <div className="flex items-center gap-3">
-              {isOpen ? <IconChevronDown className="size-4 shrink-0" /> : <IconChevronRight className="size-4 shrink-0" />}
+              {isOpen ? (
+                <IconChevronDown className="size-4 shrink-0" />
+              ) : (
+                <IconChevronRight className="size-4 shrink-0" />
+              )}
               <div className="flex size-9 items-center justify-center rounded-full bg-muted">
                 <EntityIcon type={group.entityType} />
               </div>
@@ -294,7 +302,9 @@ function EntityCard({ group }: { group: EntityGroup }) {
                   </Badge>
                 )}
               </div>
-              <span className="text-xs text-muted-foreground">{formatRelativeTime(group.latestSync._creationTime)}</span>
+              <span className="text-xs text-muted-foreground">
+                {formatRelativeTime(group.latestSync._creationTime)}
+              </span>
             </div>
           </button>
         </CollapsibleTrigger>
@@ -454,7 +464,9 @@ function RecentSyncsTable() {
                       {formatDuration(sync.durationMs)}
                     </span>
                   </TableCell>
-                  <TableCell className="text-sm text-muted-foreground">{formatRelativeTime(sync._creationTime)}</TableCell>
+                  <TableCell className="text-sm text-muted-foreground">
+                    {formatRelativeTime(sync._creationTime)}
+                  </TableCell>
                   <TableCell>
                     <SyncDetailsDialog sync={sync} />
                   </TableCell>
