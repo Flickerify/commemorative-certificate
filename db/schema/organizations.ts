@@ -1,6 +1,6 @@
-import { int, mysqlTable, serial, varchar, json, boolean, timestamp } from 'drizzle-orm/mysql-core';
+import { pgTable, serial, varchar, timestamp } from 'drizzle-orm/pg-core';
 
-export const organizations = mysqlTable('organizations', {
+export const organizations = pgTable('organizations', {
   id: serial().primaryKey(),
   workosId: varchar({ length: 255 }).notNull().unique(),
   convexId: varchar({ length: 255 }).notNull().unique(),

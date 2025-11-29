@@ -2,6 +2,10 @@
 
 import { internalAction } from '../../functions';
 import { v } from 'convex/values';
+import db from '../../../db';
+import { users } from '../../../db/schema/users';
+import { organizations } from '../../../db/schema/organizations';
+import { eq } from 'drizzle-orm';
 
 export const upsertUser = internalAction({
   args: {
@@ -13,21 +17,22 @@ export const upsertUser = internalAction({
   },
   returns: v.object({ success: v.boolean() }),
   handler: async (ctx, args) => {
-    // const { id, convexId, email, createdAt, updatedAt } = args;
+    const { id, convexId, email, createdAt, updatedAt } = args;
 
-    // await db
-    //   .insert(users)
-    //   .values({
-    //     workosId: id,
-    //     convexId: convexId,
-    //     createdAt: createdAt ? new Date(createdAt) : new Date(),
-    //     updatedAt: new Date(updatedAt),
-    //   })
-    //   .onDuplicateKeyUpdate({
-    //     set: {
-    //       updatedAt: new Date(updatedAt),
-    //     },
-    //   });
+    await db
+      .insert(users)
+      .values({
+        workosId: id,
+        convexId: convexId,
+        createdAt: createdAt ? new Date(createdAt) : new Date(),
+        updatedAt: new Date(updatedAt),
+      })
+      .onConflictDoUpdate({
+        target: [users.workosId],
+        set: {
+          updatedAt: new Date(updatedAt),
+        },
+      });
     return { success: true };
   },
 });
@@ -38,11 +43,9 @@ export const deleteUser = internalAction({
   },
   returns: v.object({ success: v.boolean() }),
   handler: async (ctx, args) => {
-    // const { workosId } = args;
+    const { workosId } = args;
 
-    // await db
-    //   .delete(users)
-    //   .where(eq(users.workosId, workosId));
+    await db.delete(users).where(eq(users.workosId, workosId));
     return { success: true };
   },
 });
@@ -56,21 +59,22 @@ export const upsertOrganization = internalAction({
   },
   returns: v.object({ success: v.boolean() }),
   handler: async (ctx, args) => {
-    // const { id, convexId, createdAt, updatedAt } = args;
+    const { id, convexId, createdAt, updatedAt } = args;
 
-    // await db
-    //   .insert(organizations)
-    //   .values({
-    //     workosId: id,
-    //     convexId: convexId,
-    //     createdAt: createdAt ? new Date(createdAt) : new Date(),
-    //     updatedAt: new Date(updatedAt),
-    //   })
-    //   .onDuplicateKeyUpdate({
-    //     set: {
-    //       updatedAt: new Date(updatedAt),
-    //     },
-    //   });
+    await db
+      .insert(organizations)
+      .values({
+        workosId: id,
+        convexId: convexId,
+        createdAt: createdAt ? new Date(createdAt) : new Date(),
+        updatedAt: new Date(updatedAt),
+      })
+      .onConflictDoUpdate({
+        target: [organizations.workosId],
+        set: {
+          updatedAt: new Date(updatedAt),
+        },
+      });
     return { success: true };
   },
 });
@@ -81,11 +85,9 @@ export const deleteOrganization = internalAction({
   },
   returns: v.object({ success: v.boolean() }),
   handler: async (ctx, args) => {
-    // const { workosId } = args;
+    const { workosId } = args;
 
-    // await db
-    //   .delete(organizations)
-    //   .where(eq(organizations.workosId, workosId));
+    await db.delete(organizations).where(eq(organizations.workosId, workosId));
     return { success: true };
   },
 });
