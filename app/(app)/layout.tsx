@@ -4,13 +4,15 @@ import { AppSidebar } from '@/components/app-sidebar';
 import { OnboardingGuard } from '@/components/onboarding-guard';
 import { SiteHeader } from '@/components/site-header';
 import { SidebarInset, SidebarProvider } from '@/components/ui/sidebar';
+import { UserProvider } from '@/components/user-provider';
 import { Authenticated } from 'convex/react';
 import type { ReactNode } from 'react';
 
 export default function AuthenticatedLayout({ children }: { readonly children: ReactNode }) {
   return (
     <Authenticated>
-      <OnboardingGuard>
+      <UserProvider>
+        <OnboardingGuard>
         <SidebarProvider
           style={
             {
@@ -31,7 +33,8 @@ export default function AuthenticatedLayout({ children }: { readonly children: R
             </div>
           </SidebarInset>
         </SidebarProvider>
-      </OnboardingGuard>
+        </OnboardingGuard>
+      </UserProvider>
     </Authenticated>
   );
 }
