@@ -25,6 +25,7 @@ import type * as users_admin_mutation from "../users/admin/mutation.js";
 import type * as users_admin_query from "../users/admin/query.js";
 import type * as users_internal_mutation from "../users/internal/mutation.js";
 import type * as users_internal_query from "../users/internal/query.js";
+import type * as users_mutation from "../users/mutation.js";
 import type * as users_query from "../users/query.js";
 import type * as users_utils from "../users/utils.js";
 import type * as workflows_syncToPlanetScale from "../workflows/syncToPlanetScale.js";
@@ -59,6 +60,7 @@ const fullApi: ApiFromModules<{
   "users/admin/query": typeof users_admin_query;
   "users/internal/mutation": typeof users_internal_mutation;
   "users/internal/query": typeof users_internal_query;
+  "users/mutation": typeof users_mutation;
   "users/query": typeof users_query;
   "users/utils": typeof users_utils;
   "workflows/syncToPlanetScale": typeof workflows_syncToPlanetScale;

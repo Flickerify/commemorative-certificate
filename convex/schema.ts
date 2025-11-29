@@ -40,6 +40,8 @@ export const languageValidator = v.union(
 // USERS & ALERTS
 // ============================================================
 
+export const metadataValidator = v.record(v.string(), v.union(v.string(), v.number(), v.boolean(), v.null()));
+
 export const users = defineTable({
   email: v.string(),
   externalId: v.string(),
@@ -48,6 +50,8 @@ export const users = defineTable({
   emailVerified: v.boolean(),
   profilePictureUrl: v.nullable(v.string()),
   role: roleValidator, // User role: USER or ADMIN
+  // Synced from WorkOS
+  metadata: v.optional(metadataValidator),
   // Preferences
   preferredLocale: v.optional(languageValidator),
   prefs: v.optional(v.any()),
@@ -130,3 +134,4 @@ export type OrganizationMembershipStatus = Infer<typeof organizationMembershipSt
 export type SyncStatus = Infer<typeof syncStatusValidator>;
 export type WebhookEvent = Infer<typeof webhookEventValidator>;
 export type Languages = Infer<typeof languageValidator>;
+export type Metadata = Infer<typeof metadataValidator>;

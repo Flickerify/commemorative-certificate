@@ -1,6 +1,6 @@
 import { v } from 'convex/values';
 import { internalMutation } from '../../functions';
-import { userWithoutRole } from '../../schema';
+import { userWithoutRole, Metadata } from '../../schema';
 
 export const upsertFromWorkos = internalMutation({
   args: userWithoutRole,
@@ -11,15 +11,31 @@ export const upsertFromWorkos = internalMutation({
       .first();
 
     if (!user) {
+      // New user: set defaults for role and metadata with onboardingComplete: false
+      const defaultMetadata: Metadata = {
+        ...args.metadata,
+        onboardingComplete: false,
+      };
       return await ctx.db.insert('users', {
         ...args,
         role: 'user',
+        metadata: defaultMetadata,
       });
     }
-    // Preserve existing role when updating
+
+    // Merge metadata: preserve local fields (like onboardingComplete), update from WorkOS
+    const existingOnboardingComplete = user.metadata?.onboardingComplete ?? false;
+    const mergedMetadata: Metadata = {
+      ...user.metadata,
+      ...args.metadata,
+      // Always preserve local onboardingComplete status
+      onboardingComplete: existingOnboardingComplete,
+    };
+
     await ctx.db.patch(user._id, {
       ...args,
       role: user.role,
+      metadata: mergedMetadata,
     });
 
     return user._id;

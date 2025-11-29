@@ -4,6 +4,28 @@ import { Id } from '../../_generated/dataModel';
 
 import { internal } from '../../_generated/api';
 import type { HttpHonoEnv } from '../../types';
+import type { Metadata } from '../../schema';
+
+// Transform WorkOS metadata to Convex-compatible format
+function transformMetadata(
+  workosMetadata: Record<string, unknown> | undefined,
+): Metadata | undefined {
+  if (!workosMetadata) return undefined;
+
+  const result: Metadata = {};
+  for (const [key, value] of Object.entries(workosMetadata)) {
+    if (
+      typeof value === 'string' ||
+      typeof value === 'number' ||
+      typeof value === 'boolean' ||
+      value === null
+    ) {
+      result[key] = value;
+    }
+    // Skip unsupported types (objects, arrays, etc.)
+  }
+  return Object.keys(result).length > 0 ? result : undefined;
+}
 
 export async function handleUserWebhooks(ctx: Context<HttpHonoEnv>) {
   const event = ctx.var.workosEvent;
@@ -12,7 +34,8 @@ export async function handleUserWebhooks(ctx: Context<HttpHonoEnv>) {
 
   try {
     switch (event.event) {
-      case 'user.created':
+      case 'user.created': {
+        const metadata = transformMetadata(event.data.metadata);
         convexId = await ctx.env.runMutation(internal.users.internal.mutation.upsertFromWorkos, {
           externalId: event.data.id,
           email: event.data.email,
@@ -20,6 +43,7 @@ export async function handleUserWebhooks(ctx: Context<HttpHonoEnv>) {
           firstName: event.data.firstName,
           lastName: event.data.lastName,
           profilePictureUrl: event.data.profilePictureUrl,
+          metadata,
           updatedAt: new Date().getTime(),
         });
 
@@ -37,8 +61,10 @@ export async function handleUserWebhooks(ctx: Context<HttpHonoEnv>) {
           externalId: event.data.id,
         });
         break;
+      }
 
-      case 'user.updated':
+      case 'user.updated': {
+        const metadata = transformMetadata(event.data.metadata);
         convexId = await ctx.env.runMutation(internal.users.internal.mutation.upsertFromWorkos, {
           externalId: event.data.id,
           email: event.data.email,
@@ -46,6 +72,7 @@ export async function handleUserWebhooks(ctx: Context<HttpHonoEnv>) {
           firstName: event.data.firstName,
           lastName: event.data.lastName,
           profilePictureUrl: event.data.profilePictureUrl,
+          metadata,
           updatedAt: new Date().getTime(),
         });
 
@@ -58,6 +85,7 @@ export async function handleUserWebhooks(ctx: Context<HttpHonoEnv>) {
           updatedAt: new Date().getTime(),
         });
         break;
+      }
 
       case 'user.deleted': {
         // Kick off deletion workflow (deletes from PlanetScale first, then Convex with cascade)
