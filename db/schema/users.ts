@@ -9,5 +9,8 @@ export const users = pgTable(
     updatedAt: timestamp().notNull(),
     createdAt: timestamp().notNull().defaultNow(),
   },
-  (table) => [uniqueIndex('idx_workos_id').on(table.workosId), uniqueIndex('idx_convex_id').on(table.convexId)],
+  (table) => [
+    uniqueIndex('idx_users_workos_id').on(table.workosId),
+    uniqueIndex('idx_users_convex_id').on(table.convexId),
+  ],
 );
