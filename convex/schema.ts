@@ -50,11 +50,9 @@ export const users = defineTable({
   emailVerified: v.boolean(),
   profilePictureUrl: v.nullable(v.string()),
   role: roleValidator, // User role: USER or ADMIN
-  // Synced from WorkOS
+  // Synced from WorkOS + local fields (onboardingComplete, preferredLocale, etc.)
   metadata: v.optional(metadataValidator),
   // Preferences
-  preferredLocale: v.optional(languageValidator),
-  prefs: v.optional(v.any()),
   // Mobile
   expoPushToken: v.optional(v.string()),
   updatedAt: v.number(),

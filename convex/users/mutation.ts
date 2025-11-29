@@ -16,8 +16,6 @@ export const completeOnboarding = protectedMutation({
 
     await ctx.db.patch(ctx.user._id, {
       metadata: updatedMetadata,
-      // Also store as top-level field for convenience
-      ...(args.preferredLocale && { preferredLocale: args.preferredLocale }),
       updatedAt: Date.now(),
     });
 

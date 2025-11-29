@@ -113,7 +113,7 @@ db/                    # Drizzle/PlanetScale
 
 - Users are created/updated via WorkOS webhooks
 - Each user has a `role` (admin/user) and `externalId` (WorkOS ID)
-- Users can have preferences (`prefs`) and locale settings (`preferredLocale`)
+- Users can have metadata (`metadata`) and locale settings (`preferredLocale`)
 - Supported languages: German (de), French (fr), Italian (it), Romansh (rm), English (en)
 
 ### Organization Management
