@@ -4,13 +4,10 @@ import { v } from 'convex/values';
 
 import { WorkOS } from '@workos-inc/node';
 import { internalAction } from '../../functions';
+import { metadataValidator } from '../../schema';
 
 /**
  * Verify a WorkOS webhook event.
- * @param payload - The payload of the webhook event.
- * @param signature - The signature of the webhook event.
- * @param secret - The signing secret of the webhook event.
- * @returns The Event object of the verified webhook event.
  */
 export const verifyWebhook = internalAction({
   args: {
@@ -25,5 +22,27 @@ export const verifyWebhook = internalAction({
       sigHeader: signature,
       secret,
     });
+  },
+});
+
+/**
+ * Update user metadata in WorkOS.
+ * WorkOS stores all metadata as strings.
+ * This will trigger a user.updated webhook which syncs the metadata back to Convex.
+ */
+export const updateUserMetadata = internalAction({
+  args: {
+    workosUserId: v.string(),
+    metadata: v.optional(metadataValidator),
+  },
+  handler: async (_ctx, { workosUserId, metadata }) => {
+    const workos = new WorkOS(process.env.WORKOS_API_KEY);
+
+    await workos.userManagement.updateUser({
+      userId: workosUserId,
+      metadata,
+    });
+
+    return { success: true };
   },
 });

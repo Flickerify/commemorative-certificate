@@ -6,7 +6,7 @@ import { Label } from '@/components/ui/label';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Spinner } from '@/components/ui/spinner';
 import { api } from '@/convex/_generated/api';
-import { useMutation, useQuery } from 'convex/react';
+import { useAction, useQuery } from 'convex/react';
 import { CheckCircle2, Globe, Sparkles } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
@@ -22,14 +22,14 @@ const LANGUAGES = [
 export default function OnboardingPage() {
   const router = useRouter();
   const user = useQuery(api.users.query.me);
-  const completeOnboarding = useMutation(api.users.mutation.completeOnboarding);
+  const completeOnboarding = useAction(api.users.action.completeOnboarding);
 
   const [selectedLocale, setSelectedLocale] = useState<string>('en');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [step, setStep] = useState<'welcome' | 'locale' | 'complete'>('welcome');
 
   // Redirect if already onboarded
-  if (user?.metadata?.onboardingComplete === true) {
+  if (user?.metadata?.onboardingComplete === 'true') {
     router.replace('/');
     return null;
   }

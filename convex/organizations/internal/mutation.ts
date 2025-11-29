@@ -1,11 +1,19 @@
-import { ConvexError, v } from 'convex/values';
+import { v } from 'convex/values';
 import { internalMutation } from '../../functions';
+import { Metadata, metadataValidator } from '../../schema';
+
+// Cast WorkOS metadata to Convex Metadata type
+// WorkOS stores metadata as string values
+function toMetadata(workosMetadata: Record<string, string> | undefined): Metadata | undefined {
+  if (!workosMetadata || Object.keys(workosMetadata).length === 0) return undefined;
+  return workosMetadata as Metadata;
+}
 
 export const upsertFromWorkos = internalMutation({
   args: {
     externalId: v.string(),
     name: v.string(),
-    metadata: v.optional(v.record(v.string(), v.union(v.string(), v.number(), v.null()))),
+    metadata: v.optional(metadataValidator),
     domains: v.optional(
       v.array(
         v.object({
@@ -26,6 +34,7 @@ export const upsertFromWorkos = internalMutation({
     if (organization === null) {
       const organizationId = await ctx.db.insert('organizations', {
         ...organizationArgs,
+        metadata: toMetadata(organizationArgs.metadata),
         updatedAt: Date.now(),
       });
       for (const domain of domains ?? []) {

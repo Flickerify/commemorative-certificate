@@ -40,7 +40,7 @@ export const languageValidator = v.union(
 // USERS & ALERTS
 // ============================================================
 
-export const metadataValidator = v.record(v.string(), v.union(v.string(), v.number(), v.boolean(), v.null()));
+export const metadataValidator = v.record(v.string(), v.string());
 
 export const users = defineTable({
   email: v.string(),
@@ -61,7 +61,7 @@ export const users = defineTable({
 export const organizations = defineTable({
   externalId: v.string(),
   name: v.string(),
-  metadata: v.optional(v.record(v.string(), v.union(v.string(), v.number(), v.null()))),
+  metadata: v.optional(metadataValidator),
   updatedAt: v.number(),
 });
 

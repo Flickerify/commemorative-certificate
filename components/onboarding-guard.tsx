@@ -14,7 +14,7 @@ export function OnboardingGuard({ children }: OnboardingGuardProps) {
   const router = useRouter();
   const user = useQuery(api.users.query.me);
 
-  const isOnboardingComplete = user?.metadata?.onboardingComplete === true;
+  const isOnboardingComplete = user?.metadata?.onboardingComplete === 'true';
 
   useEffect(() => {
     // Only redirect if we have user data and onboarding is not complete

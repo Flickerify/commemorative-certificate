@@ -6,25 +6,11 @@ import { internal } from '../../_generated/api';
 import type { HttpHonoEnv } from '../../types';
 import type { Metadata } from '../../schema';
 
-// Transform WorkOS metadata to Convex-compatible format
-function transformMetadata(
-  workosMetadata: Record<string, unknown> | undefined,
-): Metadata | undefined {
-  if (!workosMetadata) return undefined;
-
-  const result: Metadata = {};
-  for (const [key, value] of Object.entries(workosMetadata)) {
-    if (
-      typeof value === 'string' ||
-      typeof value === 'number' ||
-      typeof value === 'boolean' ||
-      value === null
-    ) {
-      result[key] = value;
-    }
-    // Skip unsupported types (objects, arrays, etc.)
-  }
-  return Object.keys(result).length > 0 ? result : undefined;
+// Cast WorkOS metadata to Convex Metadata type
+// WorkOS stores metadata as string values
+function toMetadata(workosMetadata: Record<string, string> | undefined): Metadata | undefined {
+  if (!workosMetadata || Object.keys(workosMetadata).length === 0) return undefined;
+  return workosMetadata as Metadata;
 }
 
 export async function handleUserWebhooks(ctx: Context<HttpHonoEnv>) {
@@ -35,7 +21,6 @@ export async function handleUserWebhooks(ctx: Context<HttpHonoEnv>) {
   try {
     switch (event.event) {
       case 'user.created': {
-        const metadata = transformMetadata(event.data.metadata);
         convexId = await ctx.env.runMutation(internal.users.internal.mutation.upsertFromWorkos, {
           externalId: event.data.id,
           email: event.data.email,
@@ -43,7 +28,7 @@ export async function handleUserWebhooks(ctx: Context<HttpHonoEnv>) {
           firstName: event.data.firstName,
           lastName: event.data.lastName,
           profilePictureUrl: event.data.profilePictureUrl,
-          metadata,
+          metadata: toMetadata(event.data.metadata),
           updatedAt: new Date().getTime(),
         });
 
@@ -64,7 +49,6 @@ export async function handleUserWebhooks(ctx: Context<HttpHonoEnv>) {
       }
 
       case 'user.updated': {
-        const metadata = transformMetadata(event.data.metadata);
         convexId = await ctx.env.runMutation(internal.users.internal.mutation.upsertFromWorkos, {
           externalId: event.data.id,
           email: event.data.email,
@@ -72,7 +56,7 @@ export async function handleUserWebhooks(ctx: Context<HttpHonoEnv>) {
           firstName: event.data.firstName,
           lastName: event.data.lastName,
           profilePictureUrl: event.data.profilePictureUrl,
-          metadata,
+          metadata: toMetadata(event.data.metadata),
           updatedAt: new Date().getTime(),
         });
 

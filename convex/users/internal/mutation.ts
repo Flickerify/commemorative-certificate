@@ -1,6 +1,6 @@
 import { v } from 'convex/values';
 import { internalMutation } from '../../functions';
-import { userWithoutRole, Metadata } from '../../schema';
+import { userWithoutRole, Metadata, metadataValidator } from '../../schema';
 
 export const upsertFromWorkos = internalMutation({
   args: userWithoutRole,
@@ -11,10 +11,10 @@ export const upsertFromWorkos = internalMutation({
       .first();
 
     if (!user) {
-      // New user: set defaults for role and metadata with onboardingComplete: false
+      // New user: set defaults for role, use metadata from WorkOS (or default onboardingComplete: 'false')
       const defaultMetadata: Metadata = {
-        ...args.metadata,
-        onboardingComplete: false,
+        onboardingComplete: 'false',
+        ...args.metadata, // WorkOS metadata overrides defaults
       };
       return await ctx.db.insert('users', {
         ...args,
@@ -23,13 +23,11 @@ export const upsertFromWorkos = internalMutation({
       });
     }
 
-    // Merge metadata: preserve local fields (like onboardingComplete), update from WorkOS
-    const existingOnboardingComplete = user.metadata?.onboardingComplete ?? false;
+    // WorkOS is the source of truth for metadata - use incoming metadata directly
+    // Merge with existing to preserve any Convex-only fields, but WorkOS values take precedence
     const mergedMetadata: Metadata = {
       ...user.metadata,
-      ...args.metadata,
-      // Always preserve local onboardingComplete status
-      onboardingComplete: existingOnboardingComplete,
+      ...args.metadata, // WorkOS metadata takes precedence
     };
 
     await ctx.db.patch(user._id, {
@@ -39,6 +37,31 @@ export const upsertFromWorkos = internalMutation({
     });
 
     return user._id;
+  },
+});
+
+export const updateMetadata = internalMutation({
+  args: {
+    userId: v.id('users'),
+    metadata: metadataValidator,
+  },
+  async handler(ctx, { userId, metadata }) {
+    const user = await ctx.db.get(userId);
+    if (!user) {
+      throw new Error(`User not found: ${userId}`);
+    }
+
+    const mergedMetadata: Metadata = {
+      ...user.metadata,
+      ...metadata,
+    };
+
+    await ctx.db.patch(userId, {
+      metadata: mergedMetadata,
+      updatedAt: Date.now(),
+    });
+
+    return { success: true };
   },
 });
 
