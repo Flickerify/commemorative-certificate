@@ -19,8 +19,10 @@ import {
   Keyboard,
   Languages,
   Check,
-  Loader2,
+  Mail,
+  Megaphone,
 } from 'lucide-react';
+import { Switch } from '@/components/ui/switch';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import {
   DropdownMenu,
@@ -60,8 +62,8 @@ export function UserAccountDropdown({ className }: { className?: string }) {
   const updatePreferencesAction = useAction(api.users.action.updatePreferences);
 
   const [isOpen, setIsOpen] = useState(false);
-  const [isSavingTheme, setIsSavingTheme] = useState(false);
-  const [isSavingLanguage, setIsSavingLanguage] = useState(false);
+  const [emailNotifications, setEmailNotifications] = useState(true);
+  const [marketingEmails, setMarketingEmails] = useState(false);
 
   // Debounce ref for preferences updates
   const debounceRef = useRef<NodeJS.Timeout | null>(null);
@@ -70,20 +72,31 @@ export function UserAccountDropdown({ className }: { className?: string }) {
   const selectedLanguage = user?.metadata?.preferredLocale || 'en';
   const currentLanguage = languages.find((l) => l.code === selectedLanguage);
 
-  // Sync theme from user metadata on load (only once)
-  const hasInitializedTheme = useRef(false);
+  // Sync preferences from user metadata on load (only once)
+  const hasInitialized = useRef(false);
   useEffect(() => {
-    if (user?.metadata?.theme && !hasInitializedTheme.current) {
-      hasInitializedTheme.current = true;
-      if (user.metadata.theme !== theme) {
+    if (user?.metadata && !hasInitialized.current) {
+      hasInitialized.current = true;
+
+      // Sync theme
+      if (user.metadata.theme && user.metadata.theme !== theme) {
         setTheme(user.metadata.theme);
       }
+
+      // Sync notification preferences
+      setEmailNotifications(user.metadata.emailNotifications !== 'false');
+      setMarketingEmails(user.metadata.marketingEmails === 'true');
     }
-  }, [user?.metadata?.theme, theme, setTheme]);
+  }, [user?.metadata, theme, setTheme]);
 
   // Debounced preference update
   const updatePreferences = useCallback(
-    (prefs: { theme?: 'light' | 'dark' | 'system'; preferredLocale?: 'en' | 'de' | 'fr' | 'it' | 'rm' }) => {
+    (prefs: {
+      theme?: 'light' | 'dark' | 'system';
+      preferredLocale?: 'en' | 'de' | 'fr' | 'it' | 'rm';
+      emailNotifications?: boolean;
+      marketingEmails?: boolean;
+    }) => {
       // Clear existing timeout
       if (debounceRef.current) {
         clearTimeout(debounceRef.current);
@@ -102,25 +115,22 @@ export function UserAccountDropdown({ className }: { className?: string }) {
   );
 
   const handleThemeChange = (newTheme: string) => {
-    // Update UI immediately
     setTheme(newTheme);
-    setIsSavingTheme(true);
-
-    // Debounced save to backend
     updatePreferences({ theme: newTheme as 'light' | 'dark' | 'system' });
-
-    // Clear saving state after a short delay
-    setTimeout(() => setIsSavingTheme(false), 500);
   };
 
   const handleLanguageChange = (newLanguage: string) => {
-    setIsSavingLanguage(true);
-
-    // Debounced save to backend
     updatePreferences({ preferredLocale: newLanguage as 'en' | 'de' | 'fr' | 'it' | 'rm' });
+  };
 
-    // Clear saving state after a short delay
-    setTimeout(() => setIsSavingLanguage(false), 500);
+  const handleEmailNotificationsChange = (checked: boolean) => {
+    setEmailNotifications(checked);
+    updatePreferences({ emailNotifications: checked });
+  };
+
+  const handleMarketingEmailsChange = (checked: boolean) => {
+    setMarketingEmails(checked);
+    updatePreferences({ marketingEmails: checked });
   };
 
   const handleSignOut = async () => {
@@ -298,6 +308,28 @@ export function UserAccountDropdown({ className }: { className?: string }) {
               </DropdownMenuSubContent>
             </DropdownMenuPortal>
           </DropdownMenuSub>
+
+          {/* Email Notifications */}
+          <div className="flex items-center justify-between px-2 py-2 rounded-md" onClick={(e) => e.preventDefault()}>
+            <div className="flex items-center gap-3">
+              <Mail className="h-4 w-4 text-muted-foreground" />
+              <span className="text-sm">Email notifications</span>
+            </div>
+            <Switch
+              checked={emailNotifications}
+              onCheckedChange={handleEmailNotificationsChange}
+              className="scale-90"
+            />
+          </div>
+
+          {/* Marketing Emails */}
+          <div className="flex items-center justify-between px-2 py-2 rounded-md" onClick={(e) => e.preventDefault()}>
+            <div className="flex items-center gap-3">
+              <Megaphone className="h-4 w-4 text-muted-foreground" />
+              <span className="text-sm">Marketing emails</span>
+            </div>
+            <Switch checked={marketingEmails} onCheckedChange={handleMarketingEmailsChange} className="scale-90" />
+          </div>
 
           <DropdownMenuItem className="flex items-center gap-3 px-2 py-2 rounded-md cursor-pointer">
             <Keyboard className="h-4 w-4 text-muted-foreground" />
