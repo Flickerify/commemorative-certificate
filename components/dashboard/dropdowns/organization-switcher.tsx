@@ -1,8 +1,7 @@
 'use client';
 
-import { useState } from 'react';
 import { cn } from '@/lib/utils';
-import { Building2, Check, ChevronDown, Plus, Settings, Users, UserPlus, Sparkles, User } from 'lucide-react';
+import { Building2, Check, ChevronDown, Plus, Settings, Users, UserPlus, Sparkles, User, Loader2 } from 'lucide-react';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -12,14 +11,13 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
+import { useRouter } from 'next/navigation';
+import { useAuth } from '@workos-inc/authkit-nextjs/components';
+import { Doc } from '@/convex/_generated/dataModel';
+import { useQuery } from 'convex/react';
+import { api } from '@/convex/_generated/api';
 
-interface Organization {
-  id: string;
-  name: string;
-  logo?: string;
-  role: 'owner' | 'admin' | 'member';
-  plan: 'free' | 'pro' | 'enterprise';
-}
+type Organization = Doc<'organizations'> & { role?: string };
 
 function getInitials(name: string): string {
   const words = name.trim().split(/\s+/);
@@ -29,29 +27,9 @@ function getInitials(name: string): string {
   return (words[0].charAt(0) + words[1].charAt(0)).toUpperCase();
 }
 
-const organizations: Organization[] = [
-  {
-    id: 'org-1',
-    name: 'Acme Corporation',
-    role: 'owner',
-    plan: 'enterprise',
-  },
-  {
-    id: 'org-2',
-    name: 'Design Studio',
-    role: 'admin',
-    plan: 'pro',
-  },
-  {
-    id: 'org-3',
-    name: 'Startup Inc',
-    role: 'member',
-    plan: 'free',
-  },
-];
-
-const planColors = {
+const planColors: Record<string, string> = {
   free: 'bg-muted text-muted-foreground',
+  personal: 'bg-muted text-muted-foreground',
   pro: 'bg-blue-100 text-blue-700 dark:bg-blue-500/20 dark:text-blue-400',
   enterprise: 'bg-amber-100 text-amber-700 dark:bg-amber-500/20 dark:text-amber-400',
 };
@@ -61,11 +39,13 @@ function OrgAvatar({
   logo,
   size = 'md',
   className,
+  isPersonal = false,
 }: {
   name: string;
-  logo?: string;
+  logo?: string | null;
   size?: 'sm' | 'md' | 'lg';
   className?: string;
+  isPersonal?: boolean;
 }) {
   const sizeClasses = {
     sm: 'h-8 w-8 text-xs',
@@ -77,10 +57,24 @@ function OrgAvatar({
     return <img src={logo} alt={name} className={cn('rounded-lg object-cover', sizeClasses[size], className)} />;
   }
 
+  if (isPersonal) {
+    return (
+      <div
+        className={cn(
+          'flex items-center justify-center rounded-lg bg-linear-to-br from-violet-500 to-violet-600 text-white',
+          sizeClasses[size],
+          className,
+        )}
+      >
+        <User className={size === 'sm' ? 'h-4 w-4' : 'h-5 w-5'} />
+      </div>
+    );
+  }
+
   return (
     <div
       className={cn(
-        'flex items-center justify-center rounded-lg bg-gradient-to-br from-primary to-primary/80 text-primary-foreground font-semibold',
+        'flex items-center justify-center rounded-lg bg-linear-to-br from-primary to-primary/80 text-primary-foreground font-semibold',
         sizeClasses[size],
         className,
       )}
@@ -91,133 +85,173 @@ function OrgAvatar({
 }
 
 export function OrganizationSwitcher({ className }: { className?: string }) {
-  const [selectedOrg, setSelectedOrg] = useState<string>('personal');
-  const [isOpen, setIsOpen] = useState(false);
+  const router = useRouter();
+  const { organizationId, switchToOrganization } = useAuth();
 
-  const currentOrg = organizations.find((o) => o.id === selectedOrg);
-  const isPersonal = selectedOrg === 'personal';
+  // Fetch organizations from Convex
+  const organizations = useQuery(api.organizations.query.getOrganizationsByUserId) as Organization[] | undefined;
+
+  const handleSwitchToOrganization = async (orgExternalId: string) => {
+    await switchToOrganization(orgExternalId);
+    router.refresh();
+  };
+
+  // Loading state
+  if (organizations === undefined) {
+    return (
+      <div className={cn('flex h-9 w-9 items-center justify-center rounded-lg bg-muted animate-pulse', className)}>
+        <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+      </div>
+    );
+  }
+
+  // Find current and personal organizations
+  const currentOrg = organizations?.find((org) => org.externalId === organizationId);
+  const personalOrg = organizations?.find((org) => org.metadata?.tier === 'personal');
+  const isPersonal = currentOrg?.metadata?.tier === 'personal';
+  const nonPersonalOrgs = organizations?.filter((org) => org.metadata?.tier !== 'personal') || [];
+
+  const getPlanFromOrg = (org: Organization): string => {
+    return (org.metadata?.tier as string) || 'free';
+  };
 
   return (
-    <DropdownMenu open={isOpen} onOpenChange={setIsOpen}>
+    <DropdownMenu>
       <DropdownMenuTrigger asChild>
         <button
           className={cn(
             'flex h-9 w-9 items-center justify-center rounded-lg transition-all overflow-hidden',
-            !currentOrg?.logo && 'bg-primary text-primary-foreground',
             'hover:ring-2 hover:ring-primary/20 hover:ring-offset-2 hover:ring-offset-sidebar',
             'focus:outline-none focus:ring-2 focus:ring-primary/20 focus:ring-offset-2 focus:ring-offset-sidebar',
             'relative group',
             className,
           )}
         >
-          {isPersonal ? (
-            <div className="flex h-full w-full items-center justify-center bg-gradient-to-br from-violet-500 to-violet-600 text-white">
+          {currentOrg ? (
+            <OrgAvatar
+              name={currentOrg.name}
+              logo={currentOrg.metadata?.logoUrl as string | undefined}
+              isPersonal={isPersonal}
+              size="md"
+            />
+          ) : (
+            <div className="flex h-full w-full items-center justify-center bg-linear-to-br from-violet-500 to-violet-600 text-white">
               <User className="h-5 w-5" />
             </div>
-          ) : currentOrg ? (
-            currentOrg.logo ? (
-              <img src={currentOrg.logo} alt={currentOrg.name} className="h-full w-full object-cover" />
-            ) : (
-              <span className="text-sm font-semibold">{getInitials(currentOrg.name)}</span>
-            )
-          ) : (
-            <Building2 className="h-5 w-5" />
           )}
           <ChevronDown className="absolute -bottom-0.5 -right-0.5 h-3 w-3 rounded-full bg-sidebar text-sidebar-foreground opacity-0 group-hover:opacity-100 transition-opacity" />
         </button>
       </DropdownMenuTrigger>
       <DropdownMenuContent side="right" align="start" sideOffset={12} className="w-72 p-0 overflow-hidden">
+        {/* Current Selection Header */}
         <div className="bg-muted/50 px-3 py-3 border-b">
           <div className="flex items-center gap-3">
-            {isPersonal ? (
+            {currentOrg ? (
               <>
-                <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-gradient-to-br from-violet-500 to-violet-600 text-white font-semibold shadow-sm">
-                  <User className="h-5 w-5" />
-                </div>
-                <div className="flex-1 min-w-0">
-                  <p className="font-medium text-sm truncate">Personal Workspace</p>
-                  <p className="text-xs text-muted-foreground">Your private space</p>
-                </div>
-              </>
-            ) : currentOrg ? (
-              <>
-                <OrgAvatar name={currentOrg.name} logo={currentOrg.logo} size="lg" className="shadow-sm" />
+                <OrgAvatar
+                  name={currentOrg.name}
+                  logo={currentOrg.metadata?.logoUrl as string | undefined}
+                  isPersonal={isPersonal}
+                  size="lg"
+                  className="shadow-sm"
+                />
                 <div className="flex-1 min-w-0">
                   <p className="font-medium text-sm truncate">{currentOrg.name}</p>
-                  <p className="text-xs text-muted-foreground capitalize">{currentOrg.role}</p>
+                  <p className="text-xs text-muted-foreground capitalize">{currentOrg.role || 'Member'}</p>
                 </div>
                 <span
                   className={cn(
                     'text-[10px] font-medium px-2 py-0.5 rounded-full capitalize',
-                    planColors[currentOrg.plan],
+                    planColors[getPlanFromOrg(currentOrg)] || planColors.free,
                   )}
                 >
-                  {currentOrg.plan}
+                  {getPlanFromOrg(currentOrg)}
                 </span>
               </>
-            ) : null}
+            ) : (
+              <div className="flex items-center gap-3">
+                <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-muted">
+                  <Building2 className="h-5 w-5 text-muted-foreground" />
+                </div>
+                <p className="font-medium text-sm">Select Organization</p>
+              </div>
+            )}
           </div>
         </div>
 
-        <DropdownMenuGroup className="p-1.5">
-          <DropdownMenuItem
-            onClick={() => setSelectedOrg('personal')}
-            className={cn(
-              'flex items-center gap-3 px-2 py-2.5 rounded-md cursor-pointer',
-              isPersonal && 'bg-primary/5',
-            )}
-          >
-            <div className="flex h-8 w-8 items-center justify-center rounded-md bg-gradient-to-br from-violet-500 to-violet-600 text-white">
-              <User className="h-4 w-4" />
-            </div>
-            <div className="flex-1 min-w-0">
-              <p className="text-sm font-medium truncate">Personal Workspace</p>
-              <p className="text-xs text-muted-foreground">Your private space</p>
-            </div>
-            {isPersonal && <Check className="h-4 w-4 text-primary flex-shrink-0" />}
-          </DropdownMenuItem>
-        </DropdownMenuGroup>
-
-        <DropdownMenuSeparator className="my-0" />
-
-        <DropdownMenuGroup className="p-1.5">
-          <DropdownMenuLabel className="text-[11px] uppercase tracking-wider text-muted-foreground font-medium px-2 py-1.5">
-            Organizations
-          </DropdownMenuLabel>
-
-          {organizations.map((org) => (
+        {/* Personal Workspace Option */}
+        {personalOrg && (
+          <DropdownMenuGroup className="p-1.5">
             <DropdownMenuItem
-              key={org.id}
-              onClick={() => setSelectedOrg(org.id)}
+              onClick={() => handleSwitchToOrganization(personalOrg.externalId)}
               className={cn(
                 'flex items-center gap-3 px-2 py-2.5 rounded-md cursor-pointer',
-                selectedOrg === org.id && 'bg-primary/5',
+                isPersonal && 'bg-primary/5',
               )}
             >
-              <OrgAvatar
-                name={org.name}
-                logo={org.logo}
-                size="sm"
-                className={!org.logo ? 'bg-gradient-to-br from-muted to-muted/50 text-foreground' : ''}
-              />
+              <OrgAvatar name="Personal" isPersonal size="sm" />
               <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2">
-                  <p className="text-sm font-medium truncate">{org.name}</p>
-                  <span className={cn('text-[9px] font-medium px-1.5 py-0.5 rounded capitalize', planColors[org.plan])}>
-                    {org.plan}
-                  </span>
-                </div>
-                <p className="text-xs text-muted-foreground capitalize">{org.role}</p>
+                <p className="text-sm font-medium truncate">Personal Workspace</p>
+                <p className="text-xs text-muted-foreground">Your private space</p>
               </div>
-              {selectedOrg === org.id && <Check className="h-4 w-4 text-primary flex-shrink-0" />}
+              {isPersonal && <Check className="h-4 w-4 text-primary shrink-0" />}
             </DropdownMenuItem>
-          ))}
-        </DropdownMenuGroup>
+          </DropdownMenuGroup>
+        )}
+
+        {/* Organizations List */}
+        {nonPersonalOrgs.length > 0 && (
+          <>
+            <DropdownMenuSeparator className="my-0" />
+            <DropdownMenuGroup className="p-1.5">
+              <DropdownMenuLabel className="text-[11px] uppercase tracking-wider text-muted-foreground font-medium px-2 py-1.5">
+                Organizations
+              </DropdownMenuLabel>
+
+              {nonPersonalOrgs.map((org) => (
+                <DropdownMenuItem
+                  key={org._id}
+                  onClick={() => handleSwitchToOrganization(org.externalId)}
+                  className={cn(
+                    'flex items-center gap-3 px-2 py-2.5 rounded-md cursor-pointer',
+                    organizationId === org.externalId && 'bg-primary/5',
+                  )}
+                >
+                  <OrgAvatar
+                    name={org.name}
+                    logo={org.metadata?.logoUrl as string | undefined}
+                    size="sm"
+                    className="bg-linear-to-br from-muted to-muted/50 text-foreground"
+                  />
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2">
+                      <p className="text-sm font-medium truncate">{org.name}</p>
+                      <span
+                        className={cn(
+                          'text-[9px] font-medium px-1.5 py-0.5 rounded capitalize',
+                          planColors[getPlanFromOrg(org)] || planColors.free,
+                        )}
+                      >
+                        {getPlanFromOrg(org)}
+                      </span>
+                    </div>
+                    <p className="text-xs text-muted-foreground capitalize">{org.role || 'Member'}</p>
+                  </div>
+                  {organizationId === org.externalId && <Check className="h-4 w-4 text-primary shrink-0" />}
+                </DropdownMenuItem>
+              ))}
+            </DropdownMenuGroup>
+          </>
+        )}
 
         <DropdownMenuSeparator className="my-0" />
 
+        {/* Create Organization */}
         <DropdownMenuGroup className="p-1.5">
-          <DropdownMenuItem className="flex items-center gap-3 px-2 py-2 rounded-md cursor-pointer">
+          <DropdownMenuItem
+            className="flex items-center gap-3 px-2 py-2 rounded-md cursor-pointer"
+            onClick={() => router.push('/organization/new')}
+          >
             <div className="flex h-8 w-8 items-center justify-center rounded-md bg-muted">
               <Plus className="h-4 w-4 text-muted-foreground" />
             </div>
@@ -225,20 +259,29 @@ export function OrganizationSwitcher({ className }: { className?: string }) {
           </DropdownMenuItem>
         </DropdownMenuGroup>
 
-        {!isPersonal && (
+        {/* Organization Management Options */}
+        {!isPersonal && currentOrg && (
           <>
             <DropdownMenuSeparator className="my-0" />
-
             <DropdownMenuGroup className="p-1.5">
-              <DropdownMenuItem className="flex items-center gap-3 px-2 py-2 rounded-md cursor-pointer">
+              <DropdownMenuItem
+                className="flex items-center gap-3 px-2 py-2 rounded-md cursor-pointer"
+                onClick={() => router.push('/collaborators')}
+              >
                 <UserPlus className="h-4 w-4 text-muted-foreground ml-2" />
                 <span className="text-sm">Invite members</span>
               </DropdownMenuItem>
-              <DropdownMenuItem className="flex items-center gap-3 px-2 py-2 rounded-md cursor-pointer">
+              <DropdownMenuItem
+                className="flex items-center gap-3 px-2 py-2 rounded-md cursor-pointer"
+                onClick={() => router.push('/collaborators')}
+              >
                 <Users className="h-4 w-4 text-muted-foreground ml-2" />
                 <span className="text-sm">Manage members</span>
               </DropdownMenuItem>
-              <DropdownMenuItem className="flex items-center gap-3 px-2 py-2 rounded-md cursor-pointer">
+              <DropdownMenuItem
+                className="flex items-center gap-3 px-2 py-2 rounded-md cursor-pointer"
+                onClick={() => router.push('/administration/organization')}
+              >
                 <Settings className="h-4 w-4 text-muted-foreground ml-2" />
                 <span className="text-sm">Organization settings</span>
               </DropdownMenuItem>
@@ -246,10 +289,14 @@ export function OrganizationSwitcher({ className }: { className?: string }) {
           </>
         )}
 
-        {!isPersonal && currentOrg && currentOrg.plan !== 'enterprise' && (
+        {/* Upgrade CTA */}
+        {!isPersonal && currentOrg && getPlanFromOrg(currentOrg) !== 'enterprise' && (
           <>
             <DropdownMenuSeparator className="my-0" />
-            <div className="p-3 bg-gradient-to-r from-primary/5 to-primary/10">
+            <div
+              className="p-3 bg-linear-to-r from-primary/5 to-primary/10 cursor-pointer hover:from-primary/10 hover:to-primary/15 transition-colors"
+              onClick={() => router.push('/billing')}
+            >
               <div className="flex items-center gap-2 mb-1">
                 <Sparkles className="h-4 w-4 text-primary" />
                 <span className="text-sm font-medium">Upgrade to Enterprise</span>

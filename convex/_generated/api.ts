@@ -14,6 +14,7 @@ import type * as functions from "../functions.js";
 import type * as http from "../http.js";
 import type * as organizationDomains_internal_mutation from "../organizationDomains/internal/mutation.js";
 import type * as organizationMemberships_internal_mutation from "../organizationMemberships/internal/mutation.js";
+import type * as organizations_action from "../organizations/action.js";
 import type * as organizations_internal_action from "../organizations/internal/action.js";
 import type * as organizations_internal_mutation from "../organizations/internal/mutation.js";
 import type * as organizations_internal_query from "../organizations/internal/query.js";
@@ -50,6 +51,7 @@ const fullApi: ApiFromModules<{
   http: typeof http;
   "organizationDomains/internal/mutation": typeof organizationDomains_internal_mutation;
   "organizationMemberships/internal/mutation": typeof organizationMemberships_internal_mutation;
+  "organizations/action": typeof organizations_action;
   "organizations/internal/action": typeof organizations_internal_action;
   "organizations/internal/mutation": typeof organizations_internal_mutation;
   "organizations/internal/query": typeof organizations_internal_query;

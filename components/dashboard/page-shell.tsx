@@ -4,6 +4,7 @@ import type { ReactNode } from 'react';
 import { Button } from '@/components/ui/button';
 import { Menu, PanelRight, Search } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { useDashboard } from './dashboard-context';
 
 interface PageShellProps {
   children: ReactNode;
@@ -15,12 +16,17 @@ interface PageShellProps {
 }
 
 export function PageShell({ children, title, description, headerActions, footerText, className }: PageShellProps) {
+  const { toggleRightSidebar, toggleMobileMenu, isRightSidebarOpen } = useDashboard();
+
   return (
     <div className={cn('flex flex-col h-full', className)}>
       {/* Header */}
       <header className="flex items-center justify-between border-b border-border px-4 py-3 lg:px-6">
         <div className="flex items-center gap-4">
-          <button className="flex h-9 w-9 items-center justify-center rounded-lg md:hidden hover:bg-accent">
+          <button
+            onClick={toggleMobileMenu}
+            className="flex h-9 w-9 items-center justify-center rounded-lg md:hidden hover:bg-accent"
+          >
             <Menu className="h-5 w-5" />
           </button>
           <div>
@@ -33,7 +39,12 @@ export function PageShell({ children, title, description, headerActions, footerT
             <Search className="h-4 w-4" />
           </Button>
           {headerActions}
-          <Button variant="outline" size="icon" className="h-9 w-9 bg-transparent hidden lg:flex">
+          <Button
+            variant="outline"
+            size="icon"
+            className={cn('h-9 w-9 bg-transparent hidden lg:flex', isRightSidebarOpen && 'bg-accent')}
+            onClick={toggleRightSidebar}
+          >
             <PanelRight className="h-4 w-4" />
           </Button>
         </div>

@@ -5,6 +5,7 @@ import { usePathname } from 'next/navigation';
 import { IconSidebar } from './icon-sidebar';
 import { NavigationSidebar } from './navigation-sidebar';
 import { RightSidebar } from './right-sidebar';
+import { DashboardProvider } from './dashboard-context';
 
 export type SpaceType = 'catalog' | 'compatibility' | 'administration';
 
@@ -27,35 +28,44 @@ export default function Dashboard({ children }: DashboardProps) {
 
   const activeSpace = getActiveSpace();
 
+  const dashboardContextValue = {
+    isRightSidebarOpen,
+    toggleRightSidebar: () => setIsRightSidebarOpen(!isRightSidebarOpen),
+    isMobileMenuOpen,
+    toggleMobileMenu: () => setIsMobileMenuOpen(!isMobileMenuOpen),
+  };
+
   return (
-    <div className="flex h-screen overflow-hidden bg-background">
-      {/* Icon Sidebar - Space Switcher */}
-      <IconSidebar
-        className="hidden md:flex"
-        activeSpace={activeSpace}
-        onNavSidebarToggle={() => setIsNavSidebarOpen(!isNavSidebarOpen)}
-        isNavSidebarOpen={isNavSidebarOpen}
-      />
+    <DashboardProvider value={dashboardContextValue}>
+      <div className="flex h-screen overflow-hidden bg-background">
+        {/* Icon Sidebar - Space Switcher */}
+        <IconSidebar
+          className="hidden md:flex"
+          activeSpace={activeSpace}
+          onNavSidebarToggle={() => setIsNavSidebarOpen(!isNavSidebarOpen)}
+          isNavSidebarOpen={isNavSidebarOpen}
+        />
 
-      {/* Navigation Sidebar */}
-      <NavigationSidebar
-        activeSpace={activeSpace}
-        isMobileOpen={isMobileMenuOpen}
-        onMobileClose={() => setIsMobileMenuOpen(false)}
-        isNavOpen={isNavSidebarOpen}
-      />
+        {/* Navigation Sidebar */}
+        <NavigationSidebar
+          activeSpace={activeSpace}
+          isMobileOpen={isMobileMenuOpen}
+          onMobileClose={() => setIsMobileMenuOpen(false)}
+          isNavOpen={isNavSidebarOpen}
+        />
 
-      {/* Main Content */}
-      <main className="flex-1 flex flex-col min-w-0 overflow-hidden">
-        <div className="flex-1 overflow-y-auto">{children}</div>
-      </main>
+        {/* Main Content */}
+        <main className="flex-1 flex flex-col min-w-0 overflow-hidden">
+          <div className="flex-1 overflow-y-auto">{children}</div>
+        </main>
 
-      {/* Right Sidebar */}
-      <RightSidebar
-        isOpen={isRightSidebarOpen}
-        onClose={() => setIsRightSidebarOpen(false)}
-        activeSpace={activeSpace}
-      />
-    </div>
+        {/* Right Sidebar */}
+        <RightSidebar
+          isOpen={isRightSidebarOpen}
+          onClose={() => setIsRightSidebarOpen(false)}
+          activeSpace={activeSpace}
+        />
+      </div>
+    </DashboardProvider>
   );
 }
