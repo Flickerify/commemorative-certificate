@@ -309,27 +309,56 @@ export function UserAccountDropdown({ className }: { className?: string }) {
             </DropdownMenuPortal>
           </DropdownMenuSub>
 
-          {/* Email Notifications */}
-          <div className="flex items-center justify-between px-2 py-2 rounded-md" onClick={(e) => e.preventDefault()}>
-            <div className="flex items-center gap-3">
-              <Mail className="h-4 w-4 text-muted-foreground" />
-              <span className="text-sm">Email notifications</span>
-            </div>
-            <Switch
-              checked={emailNotifications}
-              onCheckedChange={handleEmailNotificationsChange}
-              className="scale-90"
-            />
-          </div>
-
-          {/* Marketing Emails */}
-          <div className="flex items-center justify-between px-2 py-2 rounded-md" onClick={(e) => e.preventDefault()}>
-            <div className="flex items-center gap-3">
-              <Megaphone className="h-4 w-4 text-muted-foreground" />
-              <span className="text-sm">Marketing emails</span>
-            </div>
-            <Switch checked={marketingEmails} onCheckedChange={handleMarketingEmailsChange} className="scale-90" />
-          </div>
+          {/* Notifications */}
+          <DropdownMenuSub>
+            <DropdownMenuSubTrigger className="flex items-center gap-3 px-2 py-2 rounded-md cursor-pointer">
+              <Bell className="h-4 w-4 text-muted-foreground" />
+              <div className="flex-1 flex items-center justify-between">
+                <span className="text-sm">Notifications</span>
+                <span className="text-xs text-muted-foreground mr-1">
+                  {emailNotifications || marketingEmails ? 'On' : 'Off'}
+                </span>
+              </div>
+            </DropdownMenuSubTrigger>
+            <DropdownMenuPortal>
+              <DropdownMenuSubContent className="w-56 p-1.5">
+                <div
+                  className="flex items-center justify-between px-2 py-2.5 rounded-md hover:bg-accent"
+                  onClick={(e) => e.preventDefault()}
+                >
+                  <div className="flex items-center gap-3">
+                    <Mail className="h-4 w-4 text-muted-foreground" />
+                    <div>
+                      <p className="text-sm">Email notifications</p>
+                      <p className="text-xs text-muted-foreground">Account updates</p>
+                    </div>
+                  </div>
+                  <Switch
+                    checked={emailNotifications}
+                    onCheckedChange={handleEmailNotificationsChange}
+                    className="scale-90"
+                  />
+                </div>
+                <div
+                  className="flex items-center justify-between px-2 py-2.5 rounded-md hover:bg-accent"
+                  onClick={(e) => e.preventDefault()}
+                >
+                  <div className="flex items-center gap-3">
+                    <Megaphone className="h-4 w-4 text-muted-foreground" />
+                    <div>
+                      <p className="text-sm">Marketing emails</p>
+                      <p className="text-xs text-muted-foreground">News & updates</p>
+                    </div>
+                  </div>
+                  <Switch
+                    checked={marketingEmails}
+                    onCheckedChange={handleMarketingEmailsChange}
+                    className="scale-90"
+                  />
+                </div>
+              </DropdownMenuSubContent>
+            </DropdownMenuPortal>
+          </DropdownMenuSub>
 
           <DropdownMenuItem className="flex items-center gap-3 px-2 py-2 rounded-md cursor-pointer">
             <Keyboard className="h-4 w-4 text-muted-foreground" />
