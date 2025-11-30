@@ -1,9 +1,27 @@
-"use client"
+'use client';
 
-import { useState } from "react"
-import { cn } from "@/lib/utils"
-import { LogOut, Settings, User, CreditCard, Bell, Moon, Sun, Keyboard, Languages, Check } from "lucide-react"
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
+import { useState, useEffect, useCallback, useRef } from 'react';
+import { useRouter } from 'next/navigation';
+import { useQuery, useAction } from 'convex/react';
+import { api } from '@/convex/_generated/api';
+import { useAuth } from '@workos-inc/authkit-nextjs/components';
+import { useTheme } from 'next-themes';
+import { cn } from '@/lib/utils';
+import {
+  LogOut,
+  Settings,
+  User,
+  CreditCard,
+  Bell,
+  Moon,
+  Sun,
+  Monitor,
+  Keyboard,
+  Languages,
+  Check,
+  Loader2,
+} from 'lucide-react';
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -16,41 +34,136 @@ import {
   DropdownMenuSubTrigger,
   DropdownMenuSubContent,
   DropdownMenuPortal,
-} from "@/components/ui/dropdown-menu"
-import { Switch } from "@/components/ui/switch"
+} from '@/components/ui/dropdown-menu';
 
 const languages = [
-  { code: "en", label: "English", flag: "🇺🇸" },
-  { code: "es", label: "Español", flag: "🇪🇸" },
-  { code: "fr", label: "Français", flag: "🇫🇷" },
-  { code: "de", label: "Deutsch", flag: "🇩🇪" },
-  { code: "pt", label: "Português", flag: "🇧🇷" },
-  { code: "ja", label: "日本語", flag: "🇯🇵" },
-  { code: "zh", label: "中文", flag: "🇨🇳" },
-]
+  { code: 'en', label: 'English', flag: '🇺🇸' },
+  { code: 'de', label: 'Deutsch', flag: '🇩🇪' },
+  { code: 'fr', label: 'Français', flag: '🇫🇷' },
+  { code: 'it', label: 'Italiano', flag: '🇮🇹' },
+  { code: 'rm', label: 'Rumantsch', flag: '🇨🇭' },
+];
+
+const themeOptions = [
+  { value: 'light', label: 'Light', icon: Sun },
+  { value: 'dark', label: 'Dark', icon: Moon },
+  { value: 'system', label: 'System', icon: Monitor },
+];
 
 export function UserAccountDropdown({ className }: { className?: string }) {
-  const [isOpen, setIsOpen] = useState(false)
-  const [darkMode, setDarkMode] = useState(false)
-  const [selectedLanguage, setSelectedLanguage] = useState("en")
+  const router = useRouter();
+  const { signOut } = useAuth();
+  const { theme, setTheme } = useTheme();
 
-  const currentLanguage = languages.find((l) => l.code === selectedLanguage)
+  // Fetch user data from Convex
+  const user = useQuery(api.users.query.me);
+  const updatePreferencesAction = useAction(api.users.action.updatePreferences);
+
+  const [isOpen, setIsOpen] = useState(false);
+  const [isSavingTheme, setIsSavingTheme] = useState(false);
+  const [isSavingLanguage, setIsSavingLanguage] = useState(false);
+
+  // Debounce ref for preferences updates
+  const debounceRef = useRef<NodeJS.Timeout | null>(null);
+
+  // Get current language from user metadata
+  const selectedLanguage = user?.metadata?.preferredLocale || 'en';
+  const currentLanguage = languages.find((l) => l.code === selectedLanguage);
+
+  // Sync theme from user metadata on load (only once)
+  const hasInitializedTheme = useRef(false);
+  useEffect(() => {
+    if (user?.metadata?.theme && !hasInitializedTheme.current) {
+      hasInitializedTheme.current = true;
+      if (user.metadata.theme !== theme) {
+        setTheme(user.metadata.theme);
+      }
+    }
+  }, [user?.metadata?.theme, theme, setTheme]);
+
+  // Debounced preference update
+  const updatePreferences = useCallback(
+    (prefs: { theme?: 'light' | 'dark' | 'system'; preferredLocale?: 'en' | 'de' | 'fr' | 'it' | 'rm' }) => {
+      // Clear existing timeout
+      if (debounceRef.current) {
+        clearTimeout(debounceRef.current);
+      }
+
+      // Debounce the API call by 300ms to batch rapid changes
+      debounceRef.current = setTimeout(async () => {
+        try {
+          await updatePreferencesAction(prefs);
+        } catch (err) {
+          console.error('Failed to save preferences:', err);
+        }
+      }, 300);
+    },
+    [updatePreferencesAction],
+  );
+
+  const handleThemeChange = (newTheme: string) => {
+    // Update UI immediately
+    setTheme(newTheme);
+    setIsSavingTheme(true);
+
+    // Debounced save to backend
+    updatePreferences({ theme: newTheme as 'light' | 'dark' | 'system' });
+
+    // Clear saving state after a short delay
+    setTimeout(() => setIsSavingTheme(false), 500);
+  };
+
+  const handleLanguageChange = (newLanguage: string) => {
+    setIsSavingLanguage(true);
+
+    // Debounced save to backend
+    updatePreferences({ preferredLocale: newLanguage as 'en' | 'de' | 'fr' | 'it' | 'rm' });
+
+    // Clear saving state after a short delay
+    setTimeout(() => setIsSavingLanguage(false), 500);
+  };
+
+  const handleSignOut = async () => {
+    setIsOpen(false);
+    await signOut();
+  };
+
+  const getInitials = () => {
+    if (user?.firstName && user?.lastName) {
+      return `${user.firstName[0]}${user.lastName[0]}`.toUpperCase();
+    }
+    return user?.email?.[0]?.toUpperCase() || 'U';
+  };
+
+  const getUserName = () => {
+    if (user?.firstName && user?.lastName) {
+      return `${user.firstName} ${user.lastName}`;
+    }
+    return user?.email || 'User';
+  };
+
+  // Loading state
+  if (user === undefined) {
+    return <div className={cn('h-8 w-8 rounded-full bg-muted animate-pulse', className)} />;
+  }
+
+  const ThemeIcon = themeOptions.find((t) => t.value === theme)?.icon || Monitor;
 
   return (
     <DropdownMenu open={isOpen} onOpenChange={setIsOpen}>
       <DropdownMenuTrigger asChild>
         <button
           className={cn(
-            "rounded-full transition-all",
-            "hover:ring-2 hover:ring-primary/20 hover:ring-offset-2 hover:ring-offset-sidebar",
-            "focus:outline-none focus:ring-2 focus:ring-primary/20 focus:ring-offset-2 focus:ring-offset-sidebar",
+            'rounded-full transition-all',
+            'hover:ring-2 hover:ring-primary/20 hover:ring-offset-2 hover:ring-offset-sidebar',
+            'focus:outline-none focus:ring-2 focus:ring-primary/20 focus:ring-offset-2 focus:ring-offset-sidebar',
             className,
           )}
         >
           <Avatar className="h-8 w-8 cursor-pointer">
-            <AvatarImage src="/diverse-user-avatars.png" alt="User" />
-            <AvatarFallback className="bg-gradient-to-br from-violet-500 to-purple-600 text-white text-xs">
-              JD
+            <AvatarImage src={user?.profilePictureUrl || undefined} alt={getUserName()} />
+            <AvatarFallback className="bg-linear-to-br from-violet-500 to-purple-600 text-white text-xs">
+              {getInitials()}
             </AvatarFallback>
           </Avatar>
         </button>
@@ -60,12 +173,14 @@ export function UserAccountDropdown({ className }: { className?: string }) {
         <div className="bg-muted/50 px-3 py-3 border-b">
           <div className="flex items-center gap-3">
             <Avatar className="h-10 w-10 border-2 border-background shadow-sm">
-              <AvatarImage src="/diverse-user-avatars.png" alt="User" />
-              <AvatarFallback className="bg-gradient-to-br from-violet-500 to-purple-600 text-white">JD</AvatarFallback>
+              <AvatarImage src={user?.profilePictureUrl || undefined} alt={getUserName()} />
+              <AvatarFallback className="bg-linear-to-br from-violet-500 to-purple-600 text-white">
+                {getInitials()}
+              </AvatarFallback>
             </Avatar>
             <div className="flex-1 min-w-0">
-              <p className="font-medium text-sm truncate">John Doe</p>
-              <p className="text-xs text-muted-foreground truncate">john@example.com</p>
+              <p className="font-medium text-sm truncate">{getUserName()}</p>
+              <p className="text-xs text-muted-foreground truncate">{user?.email}</p>
             </div>
           </div>
         </div>
@@ -76,19 +191,43 @@ export function UserAccountDropdown({ className }: { className?: string }) {
             Account
           </DropdownMenuLabel>
 
-          <DropdownMenuItem className="flex items-center gap-3 px-2 py-2 rounded-md cursor-pointer">
+          <DropdownMenuItem
+            className="flex items-center gap-3 px-2 py-2 rounded-md cursor-pointer"
+            onClick={() => {
+              setIsOpen(false);
+              router.push('/account');
+            }}
+          >
             <User className="h-4 w-4 text-muted-foreground" />
             <span className="text-sm">Profile</span>
           </DropdownMenuItem>
-          <DropdownMenuItem className="flex items-center gap-3 px-2 py-2 rounded-md cursor-pointer">
+          <DropdownMenuItem
+            className="flex items-center gap-3 px-2 py-2 rounded-md cursor-pointer"
+            onClick={() => {
+              setIsOpen(false);
+              router.push('/settings');
+            }}
+          >
             <Settings className="h-4 w-4 text-muted-foreground" />
             <span className="text-sm">Account settings</span>
           </DropdownMenuItem>
-          <DropdownMenuItem className="flex items-center gap-3 px-2 py-2 rounded-md cursor-pointer">
+          <DropdownMenuItem
+            className="flex items-center gap-3 px-2 py-2 rounded-md cursor-pointer"
+            onClick={() => {
+              setIsOpen(false);
+              router.push('/billing');
+            }}
+          >
             <CreditCard className="h-4 w-4 text-muted-foreground" />
             <span className="text-sm">Billing</span>
           </DropdownMenuItem>
-          <DropdownMenuItem className="flex items-center gap-3 px-2 py-2 rounded-md cursor-pointer">
+          <DropdownMenuItem
+            className="flex items-center gap-3 px-2 py-2 rounded-md cursor-pointer"
+            onClick={() => {
+              setIsOpen(false);
+              router.push('/account');
+            }}
+          >
             <Bell className="h-4 w-4 text-muted-foreground" />
             <span className="text-sm">Notifications</span>
           </DropdownMenuItem>
@@ -102,18 +241,35 @@ export function UserAccountDropdown({ className }: { className?: string }) {
             Preferences
           </DropdownMenuLabel>
 
-          <div className="flex items-center justify-between px-2 py-2 rounded-md">
-            <div className="flex items-center gap-3">
-              {darkMode ? (
-                <Moon className="h-4 w-4 text-muted-foreground" />
-              ) : (
-                <Sun className="h-4 w-4 text-muted-foreground" />
-              )}
-              <span className="text-sm">Dark mode</span>
-            </div>
-            <Switch checked={darkMode} onCheckedChange={setDarkMode} className="scale-90" />
-          </div>
+          {/* Theme Selector */}
+          <DropdownMenuSub>
+            <DropdownMenuSubTrigger className="flex items-center gap-3 px-2 py-2 rounded-md cursor-pointer">
+              <ThemeIcon className="h-4 w-4 text-muted-foreground" />
+              <div className="flex-1 flex items-center justify-between">
+                <span className="text-sm">Theme</span>
+                <span className="text-xs text-muted-foreground mr-1 capitalize">{theme}</span>
+              </div>
+            </DropdownMenuSubTrigger>
+            <DropdownMenuPortal>
+              <DropdownMenuSubContent className="w-40 p-1.5">
+                {themeOptions.map((option) => (
+                  <DropdownMenuItem
+                    key={option.value}
+                    className="flex items-center justify-between px-2 py-2 rounded-md cursor-pointer"
+                    onClick={() => handleThemeChange(option.value)}
+                  >
+                    <div className="flex items-center gap-2.5">
+                      <option.icon className="h-4 w-4 text-muted-foreground" />
+                      <span className="text-sm">{option.label}</span>
+                    </div>
+                    {theme === option.value && <Check className="h-4 w-4 text-primary" />}
+                  </DropdownMenuItem>
+                ))}
+              </DropdownMenuSubContent>
+            </DropdownMenuPortal>
+          </DropdownMenuSub>
 
+          {/* Language Selector */}
           <DropdownMenuSub>
             <DropdownMenuSubTrigger className="flex items-center gap-3 px-2 py-2 rounded-md cursor-pointer">
               <Languages className="h-4 w-4 text-muted-foreground" />
@@ -130,7 +286,7 @@ export function UserAccountDropdown({ className }: { className?: string }) {
                   <DropdownMenuItem
                     key={language.code}
                     className="flex items-center justify-between px-2 py-2 rounded-md cursor-pointer"
-                    onClick={() => setSelectedLanguage(language.code)}
+                    onClick={() => handleLanguageChange(language.code)}
                   >
                     <div className="flex items-center gap-2.5">
                       <span className="text-base">{language.flag}</span>
@@ -156,13 +312,15 @@ export function UserAccountDropdown({ className }: { className?: string }) {
 
         {/* Sign Out */}
         <DropdownMenuGroup className="p-1.5">
-          <DropdownMenuItem className="flex items-center gap-3 px-2 py-2 rounded-md cursor-pointer text-destructive focus:text-destructive focus:bg-destructive/10">
+          <DropdownMenuItem
+            className="flex items-center gap-3 px-2 py-2 rounded-md cursor-pointer text-destructive focus:text-destructive focus:bg-destructive/10"
+            onClick={handleSignOut}
+          >
             <LogOut className="h-4 w-4" />
             <span className="text-sm">Sign out</span>
           </DropdownMenuItem>
         </DropdownMenuGroup>
       </DropdownMenuContent>
     </DropdownMenu>
-  )
+  );
 }
-

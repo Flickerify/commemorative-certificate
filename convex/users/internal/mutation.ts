@@ -23,12 +23,25 @@ export const upsertFromWorkos = internalMutation({
       });
     }
 
-    // WorkOS is the source of truth for metadata - use incoming metadata directly
-    // Merge with existing to preserve any Convex-only fields, but WorkOS values take precedence
-    const mergedMetadata: Metadata = {
-      ...user.metadata,
-      ...args.metadata, // WorkOS metadata takes precedence
-    };
+    // Check if local metadata is newer than incoming webhook data
+    // We use _metadataVersion as a timestamp to prevent webhook overwrites
+    const localVersion = parseInt(user.metadata?._metadataVersion || '0', 10);
+    const incomingVersion = parseInt(args.metadata?._metadataVersion || '0', 10);
+
+    // If local version is newer, preserve local metadata (user-initiated changes)
+    // Otherwise, merge with incoming webhook data
+    let mergedMetadata: Metadata;
+    if (localVersion > incomingVersion) {
+      // Local is newer - keep local metadata, but update non-metadata fields
+      mergedMetadata = user.metadata || {};
+      console.log(`Skipping metadata update from webhook: local version ${localVersion} > incoming ${incomingVersion}`);
+    } else {
+      // Webhook is newer or same - merge with preference for incoming
+      mergedMetadata = {
+        ...user.metadata,
+        ...args.metadata,
+      };
+    }
 
     await ctx.db.patch(user._id, {
       ...args,
@@ -51,15 +64,48 @@ export const updateMetadata = internalMutation({
       throw new Error(`User not found: ${userId}`);
     }
 
+    // Add version timestamp to prevent webhook overwrites
+    const version = Date.now().toString();
     const mergedMetadata: Metadata = {
       ...user.metadata,
       ...metadata,
+      _metadataVersion: version,
     };
 
     await ctx.db.patch(userId, {
       metadata: mergedMetadata,
       updatedAt: Date.now(),
     });
+
+    return { success: true, version };
+  },
+});
+
+export const updateProfile = internalMutation({
+  args: {
+    userId: v.id('users'),
+    firstName: v.optional(v.string()),
+    lastName: v.optional(v.string()),
+  },
+  async handler(ctx, { userId, firstName, lastName }) {
+    const user = await ctx.db.get(userId);
+    if (!user) {
+      throw new Error(`User not found: ${userId}`);
+    }
+
+    const updates: Partial<{ firstName: string | null; lastName: string | null; updatedAt: number }> = {
+      updatedAt: Date.now(),
+    };
+
+    if (firstName !== undefined) {
+      updates.firstName = firstName || null;
+    }
+
+    if (lastName !== undefined) {
+      updates.lastName = lastName || null;
+    }
+
+    await ctx.db.patch(userId, updates);
 
     return { success: true };
   },
