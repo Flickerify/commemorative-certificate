@@ -13,7 +13,7 @@ import {
   publicMutation,
   publicQuery,
 } from '../functions';
-import type { Event } from '@workos-inc/node';
+import type { Event as WorkosEvent } from '@workos-inc/node';
 
 export type PublicQueryCtx = CustomCtx<typeof publicQuery>;
 export type PublicMutationCtx = CustomCtx<typeof publicMutation>;
@@ -34,7 +34,7 @@ export type ActionContext = {
 
 export type HttpHonoEnv = {
   Variables: {
-    workosEvent: Event;
+    workosEvent: WorkosEvent;
   };
   Bindings: ActionCtx;
 };
