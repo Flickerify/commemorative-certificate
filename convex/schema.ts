@@ -120,6 +120,7 @@ export const users = defineTable({
   role: roleValidator,
   metadata: v.optional(metadataValidator),
   expoPushToken: v.optional(v.string()),
+  planetscaleId: v.optional(v.number()), // PlanetScale serial ID for cross-database association
   updatedAt: v.number(),
 });
 
@@ -127,6 +128,7 @@ export const organizations = defineTable({
   externalId: v.string(),
   name: v.string(),
   metadata: v.optional(metadataValidator),
+  planetscaleId: v.optional(v.number()), // PlanetScale serial ID for cross-database association
   updatedAt: v.number(),
 });
 
@@ -195,8 +197,11 @@ export const deadLetterQueue = defineTable({
 });
 
 export default defineSchema({
-  users: users.index('by_external_id', ['externalId']).index('by_email', ['email']),
-  organizations: organizations.index('externalId', ['externalId']),
+  users: users
+    .index('by_external_id', ['externalId'])
+    .index('by_email', ['email'])
+    .index('by_planetscale_id', ['planetscaleId']),
+  organizations: organizations.index('externalId', ['externalId']).index('by_planetscale_id', ['planetscaleId']),
   organizationDomains: organizationDomains
     .index('organizationId', ['organizationId'])
     .index('externalId', ['externalId'])

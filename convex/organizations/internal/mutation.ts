@@ -85,6 +85,24 @@ export const upsertFromWorkos = internalMutation({
   },
 });
 
+export const setPlanetscaleId = internalMutation({
+  args: {
+    convexId: v.id('organizations'),
+    planetscaleId: v.number(),
+  },
+  returns: v.null(),
+  async handler(ctx, { convexId, planetscaleId }) {
+    const organization = await ctx.db.get(convexId);
+    if (!organization) {
+      console.warn(`Can't set planetscaleId, organization not found: ${convexId}`);
+      return null;
+    }
+
+    await ctx.db.patch(convexId, { planetscaleId });
+    return null;
+  },
+});
+
 export const deleteFromWorkos = internalMutation({
   args: {
     externalId: v.string(),

@@ -15,11 +15,24 @@ export const upsertUser = internalAction({
     createdAt: v.optional(v.number()),
     updatedAt: v.number(),
   },
-  returns: v.object({ success: v.boolean() }),
+  returns: v.object({ success: v.boolean(), planetscaleId: v.number() }),
   handler: async (ctx, args) => {
     const { id, convexId, email, createdAt, updatedAt } = args;
 
-    await db
+    // First try to find existing record to get its ID
+    const existing = await db.select({ id: users.id }).from(users).where(eq(users.workosId, id)).limit(1);
+
+    if (existing.length > 0) {
+      // Update existing record
+      await db
+        .update(users)
+        .set({ updatedAt: new Date(updatedAt) })
+        .where(eq(users.workosId, id));
+      return { success: true, planetscaleId: existing[0].id };
+    }
+
+    // Insert new record and get the ID
+    const result = await db
       .insert(users)
       .values({
         workosId: id,
@@ -27,13 +40,9 @@ export const upsertUser = internalAction({
         createdAt: createdAt ? new Date(createdAt) : new Date(),
         updatedAt: new Date(updatedAt),
       })
-      .onConflictDoUpdate({
-        target: [users.workosId],
-        set: {
-          updatedAt: new Date(updatedAt),
-        },
-      });
-    return { success: true };
+      .returning({ id: users.id });
+
+    return { success: true, planetscaleId: result[0].id };
   },
 });
 
@@ -57,11 +66,28 @@ export const upsertOrganization = internalAction({
     createdAt: v.optional(v.number()),
     updatedAt: v.number(),
   },
-  returns: v.object({ success: v.boolean() }),
+  returns: v.object({ success: v.boolean(), planetscaleId: v.number() }),
   handler: async (ctx, args) => {
     const { id, convexId, createdAt, updatedAt } = args;
 
-    await db
+    // First try to find existing record to get its ID
+    const existing = await db
+      .select({ id: organizations.id })
+      .from(organizations)
+      .where(eq(organizations.workosId, id))
+      .limit(1);
+
+    if (existing.length > 0) {
+      // Update existing record
+      await db
+        .update(organizations)
+        .set({ updatedAt: new Date(updatedAt) })
+        .where(eq(organizations.workosId, id));
+      return { success: true, planetscaleId: existing[0].id };
+    }
+
+    // Insert new record and get the ID
+    const result = await db
       .insert(organizations)
       .values({
         workosId: id,
@@ -69,13 +95,9 @@ export const upsertOrganization = internalAction({
         createdAt: createdAt ? new Date(createdAt) : new Date(),
         updatedAt: new Date(updatedAt),
       })
-      .onConflictDoUpdate({
-        target: [organizations.workosId],
-        set: {
-          updatedAt: new Date(updatedAt),
-        },
-      });
-    return { success: true };
+      .returning({ id: organizations.id });
+
+    return { success: true, planetscaleId: result[0].id };
   },
 });
 

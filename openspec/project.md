@@ -2,7 +2,7 @@
 
 ## Purpose
 
-Flickerify is a full-stack application that provides user and organization management with WorkOS AuthKit authentication. It synchronizes identity data between WorkOS, Convex (real-time database), and PlanetScale (relational database) to support a multi-database architecture where Convex handles real-time features and PlanetScale handles relational queries.
+Flickerify is a full-stack application that provides user and organization management with WorkOS AuthKit authentication and Stripe billing. It synchronizes identity and subscription data between WorkOS, Convex (real-time database), and Planetscale PostgreSQL (relational database) to support a multi-database architecture where Convex handles real-time features and Planetscale handles relational queries.
 
 ## Tech Stack
 
@@ -13,19 +13,22 @@ Flickerify is a full-stack application that provides user and organization manag
 - **Tailwind CSS 4** – Styling (using `tw-animate-css`)
 - **shadcn/ui** – Component library built on Radix UI
 - **Radix UI** – Accessible primitives (`@radix-ui/themes`)
-- **Lucide React** – Icons
+- **Lucide React** – Primary icon library
+- **Tabler Icons** – Secondary icon library (`@tabler/icons-react`)
 - **Recharts** – Charting library
 - **TanStack Table** – Data tables
 - **TanStack Form** – Form management with Zod adapter
+- **dnd-kit** – Drag and drop (`@dnd-kit/core`, `@dnd-kit/sortable`)
 
 ### Backend
 
 - **Convex** – Real-time database, serverless functions, and file storage
 - **Convex Workflows** – Durable multi-step workflows with `@convex-dev/workflow`
 - **Hono** – HTTP routing for Convex endpoints (via `convex-helpers`)
-- **PlanetScale** – PostgreSQL-compatible relational database
-- **Drizzle ORM** – Type-safe SQL queries for PlanetScale (`drizzle-orm`, `drizzle-kit`)
+- **Planetscale PostgreSQL** – Serverless relational database (`@neondatabase/serverless`)
+- **Drizzle ORM** – Type-safe SQL queries for Planetscale (`drizzle-orm`, `drizzle-kit`)
 - **WorkOS AuthKit** – Authentication, SSO, and organization management
+- **Stripe** – Subscription billing with webhooks for payment lifecycle
 
 ### Tooling
 
@@ -40,7 +43,7 @@ Flickerify is a full-stack application that provides user and organization manag
 ### Code Style
 
 - **TypeScript strict mode** enabled throughout
-- **British English spelling** for domain terms: `organisations`, `organisationDomains`
+- **American English spelling** for domain terms: `organizations`, `organizationDomains`
 - **Readonly props** for React components: `{ readonly children: ReactNode }`
 - **Single quotes** for strings, **trailing commas** enabled
 - **Explicit return validators** on all Convex functions
@@ -53,16 +56,33 @@ Flickerify is a full-stack application that provides user and organization manag
 ```
 app/                    # Next.js App Router
 ├── (app)/             # Authenticated routes (sidebar layout + onboarding guard)
-│   ├── layout.tsx     # Uses OnboardingGuard, AppSidebar, SiteHeader
+│   ├── layout.tsx     # Uses OnboardingGuard, UserProvider, Dashboard
 │   ├── account/       # User account settings
-│   ├── analytics/     # Analytics dashboard
-│   ├── billing/       # Billing management
-│   ├── certificates/  # Certificates page
-│   ├── collaborators/ # Collaborators management
-│   ├── integrations/  # Integrations settings
-│   ├── organization/  # Organization settings
-│   ├── settings/      # App settings
-│   └── templates/     # Templates management
+│   │   ├── profile/   # Profile settings
+│   │   ├── preferences/ # User preferences
+│   │   └── notifications/ # Notification settings
+│   ├── administration/ # Organization admin settings
+│   │   ├── organization/ # Organization details
+│   │   ├── team/      # Team member management
+│   │   ├── roles/     # Role management
+│   │   ├── billing/   # Billing settings
+│   │   ├── apikeys/   # API key management
+│   │   ├── security/  # Security settings
+│   │   └── audit/     # Audit logs
+│   ├── catalog/       # Data catalog features
+│   │   ├── sources/   # Data sources
+│   │   ├── targets/   # Data targets
+│   │   ├── schemas/   # Schema definitions
+│   │   └── imports/   # Import wizard
+│   ├── compatibility/ # Compatibility management
+│   │   ├── rules/     # Compatibility rules
+│   │   ├── policies/  # Compatibility policies
+│   │   ├── overrides/ # Override configurations
+│   │   ├── playground/ # Testing playground
+│   │   ├── revisions/ # Revision history
+│   │   └── publish-logs/ # Publishing logs
+│   └── organization/  # Organization selection
+│       └── new/       # Create new organization
 ├── (onboarding)/      # Onboarding flow (minimal layout, no sidebar)
 │   ├── layout.tsx     # Gradient background, no sidebar
 │   └── onboarding/    # Onboarding wizard
@@ -74,15 +94,27 @@ app/                    # Next.js App Router
 
 convex/                # Convex backend
 ├── controllers/       # HTTP endpoint controllers (Hono)
+│   ├── stripeWebhooksController.ts  # Stripe webhook handler
+│   └── workosWebhooksController.ts  # WorkOS webhook handler
 ├── functions.ts       # Custom query/mutation/action builders
-├── schema.ts          # Database schema
+├── schema.ts          # Database schema with validators
+├── http.ts            # HTTP router configuration
 ├── types/             # TypeScript type definitions
 ├── workflows/         # Multi-step sync workflows (Convex Workflows)
 │   └── syncToPlanetScale.ts
 ├── workos/            # WorkOS webhook handlers
 │   ├── internal/      # Internal actions (verifyWebhook, updateUserMetadata)
-│   └── webhooks/      # Webhook handlers by entity
-└── [domain]/          # Domain-specific modules
+│   └── webhooks/      # Webhook handlers by entity (users, organizations, memberships)
+├── stripe/            # Stripe webhook handlers
+│   ├── internal/      # Internal actions for Stripe operations
+│   └── webhooks/      # Subscription webhook handlers
+├── billing/           # Billing queries and actions
+│   ├── action.ts      # Checkout, portal, subscription actions
+│   ├── query.ts       # Subscription queries
+│   └── stripe.ts      # Stripe client and helpers
+├── planetscale/       # Planetscale PostgreSQL sync actions
+│   └── internal/      # Internal sync operations
+└── [domain]/          # Domain-specific modules (users, organizations, etc.)
     ├── internal/      # Internal functions (mutations, queries, actions)
     ├── action.ts      # Public actions
     └── query.ts       # Public queries
@@ -92,7 +124,7 @@ components/            # React components
 ├── onboarding-guard.tsx  # Redirects non-onboarded users
 └── *.tsx              # Feature components
 
-db/                    # Drizzle/PlanetScale
+db/                    # Drizzle/Planetscale PostgreSQL
 ├── schema/            # Table definitions (users.ts, organizations.ts)
 └── index.ts           # Database connection
 ```
@@ -109,9 +141,9 @@ db/                    # Drizzle/PlanetScale
 
 #### Dual Database Pattern
 
-1. **Convex** – Primary for real-time data, user sessions, and reactive queries
-2. **PlanetScale** – Secondary for complex relational queries and legacy integrations
-3. **Sync workflows** – Convex Workflows that sync data from Convex → PlanetScale with retry logic
+1. **Convex** – Primary for real-time data, user sessions, reactive queries, and billing state
+2. **Planetscale PostgreSQL** – Secondary for relational queries, legacy integrations, and external system access
+3. **Sync workflows** – Convex Workflows that sync data from Convex → Planetscale with retry logic and dead letter queue
 
 #### Workflow Pattern
 
@@ -121,6 +153,7 @@ Sync operations use `@convex-dev/workflow` for durability:
 - Workflows run steps with retry configuration
 - `onComplete` handler updates `syncStatus` with results
 - `syncStatus` table tracks history per entity
+- **Bidirectional ID sync**: When upserting to PlanetScale, the generated `id` is synced back to Convex as `planetscaleId` for cross-database association
 
 ### Testing Strategy
 
@@ -168,17 +201,26 @@ Sync operations use `@convex-dev/workflow` for durability:
 
 ### Sync Status Tracking
 
-- `syncStatus` table tracks sync operations to PlanetScale
+- `syncStatus` table tracks sync operations to Planetscale PostgreSQL
 - Status values: `pending`, `success`, `failed`
 - Tracks `webhookEvent`, `workflowId`, `startedAt`, `completedAt`, `durationMs`
 - History is kept per entity (new record per sync, not overwritten)
 - Admin page at `/admin/sync` displays grouped sync history
 
+### Billing & Subscriptions
+
+- Organizations can have one of three tiers: `personal` (1 seat), `pro` (3 seats), `enterprise` (unlimited)
+- Stripe is the source of truth for billing; webhooks sync state to Convex
+- Subscription statuses: `active`, `canceled`, `incomplete`, `incomplete_expired`, `past_due`, `paused`, `trialing`, `unpaid`, `none`
+- Personal tier includes 14-day free trial
+- `stripeWebhookEvents` table ensures idempotent webhook processing
+- Subscription info synced to Planetscale for external system access
+
 ### Hard Deletion (GDPR)
 
-- User deletion cascades: memberships → user → PlanetScale
-- Org deletion cascades: domains → memberships → org → PlanetScale
-- Workflows handle deletion order: PlanetScale first, then Convex
+- User deletion cascades: memberships → user → Planetscale PostgreSQL
+- Org deletion cascades: domains → memberships → subscription → org → Planetscale PostgreSQL
+- Workflows handle deletion order: Planetscale first, then Convex
 
 ## Important Constraints
 
@@ -191,10 +233,12 @@ Sync operations use `@convex-dev/workflow` for durability:
 
 ### Database Sync
 
-- Convex is the source of truth for real-time data
-- WorkOS is the source of truth for user metadata
-- PlanetScale syncs are eventually consistent (background workflows)
-- Never write directly to PlanetScale from frontend; always go through Convex
+- Convex is the source of truth for real-time data and billing state
+- WorkOS is the source of truth for user metadata and authentication
+- Stripe is the source of truth for subscription billing
+- Planetscale PostgreSQL syncs are eventually consistent (background workflows)
+- Never write directly to Planetscale from frontend; always go through Convex
+- Failed syncs are tracked in `deadLetterQueue` for retry/debugging
 
 ### Performance
 
@@ -219,21 +263,38 @@ Sync operations use `@convex-dev/workflow` for durability:
 - **Widgets** – `@workos-inc/widgets` for UI components
 - **Metadata** – All values stored as strings in WorkOS
 
+### Stripe Webhooks
+
+- **Checkout** – `checkout.session.completed`
+- **Subscriptions** – `customer.subscription.created`, `customer.subscription.updated`, `customer.subscription.deleted`, `customer.subscription.paused`, `customer.subscription.resumed`, `customer.subscription.trial_will_end`
+- **Invoices** – `invoice.paid`, `invoice.payment_failed`, `invoice.payment_action_required`, `invoice.upcoming`
+- **Payments** – `payment_intent.succeeded`, `payment_intent.payment_failed`, `payment_intent.canceled`
+
 ### Convex
 
 - **Cloud** – Managed deployment at `convex.cloud`
+- **Version** – `convex@1.29.3`
 - **Dev components**:
-  - `@convex-dev/workflow` – Durable workflows with retry
-  - `@convex-dev/workpool` – Background job processing
-  - `@convex-dev/rate-limiter` – Rate limiting
-  - `@convex-dev/r2` – R2 storage integration
-  - `@convex-dev/crons` – Scheduled jobs
+  - `@convex-dev/workflow@0.3.2` – Durable workflows with retry
+  - `@convex-dev/workpool@0.3.0` – Background job processing
+  - `@convex-dev/rate-limiter@0.3.0` – Rate limiting
+  - `@convex-dev/r2@0.8.1` – R2 storage integration
+  - `@convex-dev/crons@0.2.0` – Scheduled jobs
+  - `convex-helpers@0.1.106` – Custom function builders and utilities
 
-### PlanetScale
+### Planetscale PostgreSQL
 
-- **Serverless driver** – `@planetscale/database`
+- **Serverless driver** – `@neondatabase/serverless`
 - **Connection** – Via Drizzle ORM with PostgreSQL dialect
-- **Tables**: `users`, `organizations` (id mapping only: workosId, convexId, timestamps)
+- **Tables**: `users`, `organizations` (id mapping + subscription info: workosId, convexId, subscriptionTier, subscriptionStatus, timestamps)
+
+### Stripe
+
+- **SDK** – `stripe` for server-side API calls
+- **Webhooks** – Subscription lifecycle events (checkout, subscription updates, payments)
+- **Tiers** – `personal` (1 seat), `pro` (3 seats), `enterprise` (unlimited)
+- **Trial** – 14-day free trial for personal tier
+- **Billing intervals** – Monthly and yearly options
 
 ### Environment Variables
 
@@ -250,27 +311,38 @@ WORKOS_API_KEY=
 WORKOS_COOKIE_PASSWORD=
 WORKOS_WEBHOOK_SECRET=
 
-# PlanetScale (Drizzle)
-DATABASE_HOST=
-DATABASE_USER=
-DATABASE_PASSWORD=
-DATABASE_NAME=
+# Planetscale PostgreSQL (Drizzle)
+DATABASE_URL=
+
+# Stripe (in Convex environment)
+STRIPE_SECRET_KEY=
+STRIPE_WEBHOOK_SECRET=
+STRIPE_PRICE_PERSONAL_MONTHLY=
+STRIPE_PRICE_PERSONAL_YEARLY=
+STRIPE_PRICE_PRO_MONTHLY=
+STRIPE_PRICE_PRO_YEARLY=
+STRIPE_PRICE_ENTERPRISE_MONTHLY=
+STRIPE_PRICE_ENTERPRISE_YEARLY=
 ```
 
 ## Database Schema
 
 ### Convex Tables
 
-- **users** – `email`, `externalId`, `firstName`, `lastName`, `emailVerified`, `profilePictureUrl`, `role`, `metadata`, `expoPushToken`, `updatedAt`
-- **organizations** – `externalId`, `name`, `metadata`, `updatedAt`
+- **users** – `email`, `externalId`, `firstName`, `lastName`, `emailVerified`, `profilePictureUrl`, `role`, `metadata`, `expoPushToken`, `planetscaleId?`, `updatedAt`
+- **organizations** – `externalId`, `name`, `metadata`, `planetscaleId?`, `updatedAt`
 - **organizationDomains** – `organizationId`, `externalId`, `domain`, `status`, `updatedAt`
 - **organizationMemberships** – `organizationId`, `userId`, `role`, `status`, `updatedAt`
 - **syncStatus** – `entityType`, `entityId`, `targetSystem`, `status`, `webhookEvent`, `workflowId`, `startedAt`, `completedAt`, `durationMs`, `error`
+- **stripeCustomers** – `organizationId`, `stripeCustomerId`, `createdAt`
+- **organizationSubscriptions** – `organizationId`, `stripeCustomerId`, `stripeSubscriptionId`, `stripePriceId`, `tier`, `status`, `billingInterval`, `currentPeriodStart`, `currentPeriodEnd`, `cancelAtPeriodEnd`, `cancelAt`, `trialStart`, `trialEnd`, `seatLimit`, `paymentMethodBrand`, `paymentMethodLast4`, `pendingCheckoutSessionId`, `pendingPriceId`, `createdAt`, `updatedAt`
+- **stripeWebhookEvents** – `eventId`, `eventType`, `customerId`, `processedAt` (idempotency)
+- **deadLetterQueue** – `workflowId`, `entityType`, `entityId`, `error`, `context`, `createdAt`, `retryable`, `retryCount`, `lastRetryAt`, `resolvedAt`
 
-### PlanetScale Tables
+### Planetscale PostgreSQL Tables
 
 - **users** – `id`, `workosId`, `convexId`, `updatedAt`, `createdAt`
-- **organizations** – `id`, `workosId`, `convexId`, `updatedAt`, `createdAt`
+- **organizations** – `id`, `workosId`, `convexId`, `subscriptionTier`, `subscriptionStatus`, `updatedAt`, `createdAt`
 
 ## Supported Languages
 

@@ -30,10 +30,18 @@ export const syncUser = workflow.define({
   handler: async (step, args): Promise<void> => {
     const { workosId, convexId, email, createdAt, updatedAt } = args;
 
-    await step.runAction(
+    // Step 1: Upsert to PlanetScale and get the generated ID
+    const result = await step.runAction(
       internal.planetscale.internal.action.upsertUser,
       { id: workosId, convexId, email, createdAt, updatedAt },
       { retry: SYNC_RETRY_CONFIG, name: 'upsert-user-planetscale' },
+    );
+
+    // Step 2: Sync the PlanetScale ID back to Convex
+    await step.runMutation(
+      internal.users.internal.mutation.setPlanetscaleId,
+      { convexId, planetscaleId: result.planetscaleId },
+      { name: 'set-user-planetscale-id' },
     );
   },
 });
@@ -52,10 +60,18 @@ export const syncOrganization = workflow.define({
   handler: async (step, args): Promise<void> => {
     const { workosId, convexId, createdAt, updatedAt } = args;
 
-    await step.runAction(
+    // Step 1: Upsert to PlanetScale and get the generated ID
+    const result = await step.runAction(
       internal.planetscale.internal.action.upsertOrganization,
       { id: workosId, convexId, createdAt, updatedAt },
       { retry: SYNC_RETRY_CONFIG, name: 'upsert-organization-planetscale' },
+    );
+
+    // Step 2: Sync the PlanetScale ID back to Convex
+    await step.runMutation(
+      internal.organizations.internal.mutation.setPlanetscaleId,
+      { convexId, planetscaleId: result.planetscaleId },
+      { name: 'set-organization-planetscale-id' },
     );
   },
 });
