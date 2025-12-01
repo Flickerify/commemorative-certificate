@@ -1,7 +1,7 @@
 'use client';
 
 import { cn } from '@/lib/utils';
-import { Building2, Check, ChevronDown, Plus, Settings, Users, UserPlus, Sparkles, User, Loader2 } from 'lucide-react';
+import { Check, ChevronDown, Plus, Settings, Users, UserPlus, Sparkles, User, Loader2, Lock } from 'lucide-react';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -177,9 +177,14 @@ export function OrganizationSwitcher({ className }: { className?: string }) {
           </div>
         </div>
 
-        {/* Personal Workspace Option */}
-        {personalOrg && (
-          <DropdownMenuGroup className="p-1.5">
+        {/* All Organizations List (including Personal) */}
+        <DropdownMenuGroup className="p-1.5">
+          <DropdownMenuLabel className="text-[11px] uppercase tracking-wider text-muted-foreground font-medium px-2 py-1.5">
+            Workspaces
+          </DropdownMenuLabel>
+
+          {/* Personal Organization */}
+          {personalOrg && (
             <DropdownMenuItem
               onClick={() => handleSwitchToOrganization(personalOrg.externalId)}
               className={cn(
@@ -187,63 +192,57 @@ export function OrganizationSwitcher({ className }: { className?: string }) {
                 isEffectivePersonal && 'bg-primary/5',
               )}
             >
-              <OrgAvatar name="Personal" isPersonal size="sm" />
+              <OrgAvatar name={personalOrg.name} isPersonal size="sm" />
               <div className="flex-1 min-w-0">
-                <p className="text-sm font-medium truncate">Personal Workspace</p>
-                <p className="text-xs text-muted-foreground">Your private space</p>
+                <div className="flex items-center gap-2">
+                  <p className="text-sm font-medium truncate">{personalOrg.name}</p>
+                  <span className={cn('text-[9px] font-medium px-1.5 py-0.5 rounded capitalize', planColors.personal)}>
+                    Personal
+                  </span>
+                </div>
+                <p className="text-xs text-muted-foreground capitalize">{personalOrg.role || 'Owner'}</p>
               </div>
               {isEffectivePersonal && <Check className="h-4 w-4 text-primary shrink-0" />}
             </DropdownMenuItem>
-          </DropdownMenuGroup>
-        )}
+          )}
 
-        {/* Organizations List */}
-        {nonPersonalOrgs.length > 0 && (
-          <>
-            <DropdownMenuSeparator className="my-0" />
-            <DropdownMenuGroup className="p-1.5">
-              <DropdownMenuLabel className="text-[11px] uppercase tracking-wider text-muted-foreground font-medium px-2 py-1.5">
-                Organizations
-              </DropdownMenuLabel>
-
-              {nonPersonalOrgs.map((org) => {
-                const isCurrentOrg = effectiveCurrentOrg.externalId === org.externalId;
-                return (
-                  <DropdownMenuItem
-                    key={org._id}
-                    onClick={() => handleSwitchToOrganization(org.externalId)}
-                    className={cn(
-                      'flex items-center gap-3 px-2 py-2.5 rounded-md cursor-pointer',
-                      isCurrentOrg && 'bg-primary/5',
-                    )}
-                  >
-                    <OrgAvatar
-                      name={org.name}
-                      logo={org.metadata?.logoUrl as string | undefined}
-                      size="sm"
-                      className="bg-linear-to-br from-muted to-muted/50 text-foreground"
-                    />
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2">
-                        <p className="text-sm font-medium truncate">{org.name}</p>
-                        <span
-                          className={cn(
-                            'text-[9px] font-medium px-1.5 py-0.5 rounded capitalize',
-                            planColors[getPlanFromOrg(org)] || planColors.free,
-                          )}
-                        >
-                          {getPlanFromOrg(org)}
-                        </span>
-                      </div>
-                      <p className="text-xs text-muted-foreground capitalize">{org.role || 'Member'}</p>
-                    </div>
-                    {isCurrentOrg && <Check className="h-4 w-4 text-primary shrink-0" />}
-                  </DropdownMenuItem>
-                );
-              })}
-            </DropdownMenuGroup>
-          </>
-        )}
+          {/* Other Organizations */}
+          {nonPersonalOrgs.map((org) => {
+            const isCurrentOrg = effectiveCurrentOrg.externalId === org.externalId;
+            return (
+              <DropdownMenuItem
+                key={org._id}
+                onClick={() => handleSwitchToOrganization(org.externalId)}
+                className={cn(
+                  'flex items-center gap-3 px-2 py-2.5 rounded-md cursor-pointer',
+                  isCurrentOrg && 'bg-primary/5',
+                )}
+              >
+                <OrgAvatar
+                  name={org.name}
+                  logo={org.metadata?.logoUrl as string | undefined}
+                  size="sm"
+                  className="bg-linear-to-br from-muted to-muted/50 text-foreground"
+                />
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2">
+                    <p className="text-sm font-medium truncate">{org.name}</p>
+                    <span
+                      className={cn(
+                        'text-[9px] font-medium px-1.5 py-0.5 rounded capitalize',
+                        planColors[getPlanFromOrg(org)] || planColors.free,
+                      )}
+                    >
+                      {getPlanFromOrg(org)}
+                    </span>
+                  </div>
+                  <p className="text-xs text-muted-foreground capitalize">{org.role || 'Member'}</p>
+                </div>
+                {isCurrentOrg && <Check className="h-4 w-4 text-primary shrink-0" />}
+              </DropdownMenuItem>
+            );
+          })}
+        </DropdownMenuGroup>
 
         <DropdownMenuSeparator className="my-0" />
 
@@ -261,48 +260,81 @@ export function OrganizationSwitcher({ className }: { className?: string }) {
         </DropdownMenuGroup>
 
         {/* Organization Management Options */}
-        {!isEffectivePersonal && (
-          <>
-            <DropdownMenuSeparator className="my-0" />
-            <DropdownMenuGroup className="p-1.5">
+        <DropdownMenuSeparator className="my-0" />
+        <DropdownMenuGroup className="p-1.5">
+          {isEffectivePersonal ? (
+            // Personal tier - show options with "Pro+ only" indicator
+            <>
+              <DropdownMenuItem
+                className="flex items-center gap-3 px-2 py-2 rounded-md cursor-pointer opacity-60"
+                onClick={() => router.push('/administration/billing')}
+              >
+                <UserPlus className="h-4 w-4 text-muted-foreground ml-2" />
+                <span className="text-sm flex-1">Invite members</span>
+                <span className="text-[9px] font-medium px-1.5 py-0.5 rounded bg-blue-100 text-blue-700 dark:bg-blue-500/20 dark:text-blue-400 flex items-center gap-1">
+                  <Lock className="h-3 w-3" />
+                  Pro+
+                </span>
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                className="flex items-center gap-3 px-2 py-2 rounded-md cursor-pointer opacity-60"
+                onClick={() => router.push('/administration/billing')}
+              >
+                <Users className="h-4 w-4 text-muted-foreground ml-2" />
+                <span className="text-sm flex-1">Manage members</span>
+                <span className="text-[9px] font-medium px-1.5 py-0.5 rounded bg-blue-100 text-blue-700 dark:bg-blue-500/20 dark:text-blue-400 flex items-center gap-1">
+                  <Lock className="h-3 w-3" />
+                  Pro+
+                </span>
+              </DropdownMenuItem>
+            </>
+          ) : (
+            // Pro/Enterprise - show normal options
+            <>
               <DropdownMenuItem
                 className="flex items-center gap-3 px-2 py-2 rounded-md cursor-pointer"
-                onClick={() => router.push('/collaborators')}
+                onClick={() => router.push('/administration/team')}
               >
                 <UserPlus className="h-4 w-4 text-muted-foreground ml-2" />
                 <span className="text-sm">Invite members</span>
               </DropdownMenuItem>
               <DropdownMenuItem
                 className="flex items-center gap-3 px-2 py-2 rounded-md cursor-pointer"
-                onClick={() => router.push('/collaborators')}
+                onClick={() => router.push('/administration/team')}
               >
                 <Users className="h-4 w-4 text-muted-foreground ml-2" />
                 <span className="text-sm">Manage members</span>
               </DropdownMenuItem>
-              <DropdownMenuItem
-                className="flex items-center gap-3 px-2 py-2 rounded-md cursor-pointer"
-                onClick={() => router.push('/administration/organization')}
-              >
-                <Settings className="h-4 w-4 text-muted-foreground ml-2" />
-                <span className="text-sm">Organization settings</span>
-              </DropdownMenuItem>
-            </DropdownMenuGroup>
-          </>
-        )}
+            </>
+          )}
+          <DropdownMenuItem
+            className="flex items-center gap-3 px-2 py-2 rounded-md cursor-pointer"
+            onClick={() => router.push('/administration/organization')}
+          >
+            <Settings className="h-4 w-4 text-muted-foreground ml-2" />
+            <span className="text-sm">Organization settings</span>
+          </DropdownMenuItem>
+        </DropdownMenuGroup>
 
-        {/* Upgrade CTA */}
-        {!isEffectivePersonal && getPlanFromOrg(effectiveCurrentOrg) !== 'enterprise' && (
+        {/* Upgrade CTA - contextual based on current plan */}
+        {getPlanFromOrg(effectiveCurrentOrg) !== 'enterprise' && (
           <>
             <DropdownMenuSeparator className="my-0" />
             <div
               className="p-3 bg-linear-to-r from-primary/5 to-primary/10 cursor-pointer hover:from-primary/10 hover:to-primary/15 transition-colors"
-              onClick={() => router.push('/billing')}
+              onClick={() => router.push('/administration/billing')}
             >
               <div className="flex items-center gap-2 mb-1">
                 <Sparkles className="h-4 w-4 text-primary" />
-                <span className="text-sm font-medium">Upgrade to Enterprise</span>
+                <span className="text-sm font-medium">
+                  {isEffectivePersonal ? 'Upgrade to Pro' : 'Upgrade to Enterprise'}
+                </span>
               </div>
-              <p className="text-xs text-muted-foreground">Unlock unlimited certificates and priority support</p>
+              <p className="text-xs text-muted-foreground">
+                {isEffectivePersonal
+                  ? 'Invite team members and unlock advanced features'
+                  : 'Unlock unlimited seats and priority support'}
+              </p>
             </div>
           </>
         )}
