@@ -1,5 +1,5 @@
 import type { Context, Next } from 'hono';
-import type { HttpHonoEnv } from '../../types';
+import type { WorkosHonoEnv } from '../../types';
 
 import { createMiddleware } from 'hono/factory';
 import { internal } from '../../_generated/api';
@@ -10,7 +10,7 @@ import { internal } from '../../_generated/api';
  * @returns The middleware function.
  */
 export const workosWebhookMiddleware = (secret: string) =>
-  createMiddleware<HttpHonoEnv>(async (ctx: Context<HttpHonoEnv>, next: Next) => {
+  createMiddleware<WorkosHonoEnv>(async (ctx: Context<WorkosHonoEnv>, next: Next) => {
     const request = ctx.req;
     const bodyText = await request.text();
     const sigHeader = String(request.header('workos-signature'));

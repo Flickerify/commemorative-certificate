@@ -1,5 +1,31 @@
 import { v } from 'convex/values';
-import { protectedQuery } from '../functions';
+import { protectedQuery, publicQuery } from '../functions';
+
+/**
+ * Get an organization by its Convex ID.
+ */
+export const getOrganizationById = publicQuery({
+  args: {
+    id: v.id('organizations'),
+  },
+  returns: v.union(
+    v.object({
+      _id: v.id('organizations'),
+      externalId: v.string(),
+      name: v.string(),
+    }),
+    v.null(),
+  ),
+  handler: async (ctx, args) => {
+    const org = await ctx.db.get(args.id);
+    if (!org) return null;
+    return {
+      _id: org._id,
+      externalId: org.externalId,
+      name: org.name,
+    };
+  },
+});
 
 export const getOrganizationsByUserId = protectedQuery({
   args: {},

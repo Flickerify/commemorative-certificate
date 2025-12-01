@@ -11,7 +11,6 @@ import {
   LogOut,
   Settings,
   User,
-  CreditCard,
   Bell,
   Moon,
   Sun,
@@ -220,16 +219,6 @@ export function UserAccountDropdown({ className }: { className?: string }) {
           >
             <Settings className="h-4 w-4 text-muted-foreground" />
             <span className="text-sm">Account settings</span>
-          </DropdownMenuItem>
-          <DropdownMenuItem
-            className="flex items-center gap-3 px-2 py-2 rounded-md cursor-pointer"
-            onClick={() => {
-              setIsOpen(false);
-              router.push('/billing');
-            }}
-          >
-            <CreditCard className="h-4 w-4 text-muted-foreground" />
-            <span className="text-sm">Billing</span>
           </DropdownMenuItem>
           <DropdownMenuItem
             className="flex items-center gap-3 px-2 py-2 rounded-md cursor-pointer"

@@ -2,14 +2,17 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
+import Link from 'next/link';
 import { useAuth } from '@workos-inc/authkit-nextjs/components';
 import { useQuery, useAction } from 'convex/react';
 import { api } from '@/convex/_generated/api';
+import type { Id } from '@/convex/_generated/dataModel';
 import { PageShell } from '@/components/dashboard/page-shell';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import {
   Dialog,
   DialogContent,
@@ -28,7 +31,20 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
-import { Building2, Settings, Loader2, Users, Calendar, Globe, Shield, Trash2, Pencil, Sparkles } from 'lucide-react';
+import {
+  Building2,
+  Settings,
+  Loader2,
+  Users,
+  Calendar,
+  Globe,
+  Shield,
+  Trash2,
+  Pencil,
+  Sparkles,
+  AlertTriangle,
+  CreditCard,
+} from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 const planConfig: Record<string, { label: string; color: string; features: string[] }> = {
@@ -63,11 +79,18 @@ export default function OrganizationPage() {
   const [editName, setEditName] = useState('');
   const [isUpdating, setIsUpdating] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
 
   // Fetch organization details
   const organization = useQuery(api.organizations.query.getCurrent, organizationId ? { organizationId } : 'skip');
 
   const isAdmin = useQuery(api.organizations.query.isAdmin, organizationId ? { organizationId } : 'skip');
+
+  // Check if organization can be deleted
+  const deletionStatus = useQuery(
+    api.billing.query.canDeleteOrganization,
+    organization?._id ? { organizationId: organization._id as Id<'organizations'> } : 'skip',
+  );
 
   // Actions
   const updateOrganization = useAction(api.organizations.action.update);
@@ -102,21 +125,29 @@ export default function OrganizationPage() {
     if (!organizationId) return;
 
     setIsDeleting(true);
+    setDeleteError(null);
     try {
       await deleteOrganization({ organizationId });
       router.push('/catalog/sources');
       router.refresh();
     } catch (err) {
       console.error('Failed to delete organization:', err);
+      const errorMessage = err instanceof Error ? err.message : 'Failed to delete organization';
+      setDeleteError(errorMessage);
+      setIsDeleteOpen(false); // Close dialog to show error
     } finally {
       setIsDeleting(false);
     }
   };
 
+  const openDeleteDialog = () => {
+    setDeleteError(null);
+    setIsDeleteOpen(true);
+  };
+
   const isLoading = organization === undefined;
-  const plan = (organization?.metadata?.tier as string) || 'free';
+  const plan = (organization?.metadata?.tier as string) || 'personal';
   const planInfo = planConfig[plan] || planConfig.free;
-  const isPersonal = plan === 'personal';
 
   return (
     <>
@@ -124,8 +155,7 @@ export default function OrganizationPage() {
         title="Organization Settings"
         description="Manage your organization details and settings"
         headerActions={
-          isAdmin &&
-          !isPersonal && (
+          isAdmin && (
             <Button variant="outline" className="gap-2 bg-transparent" onClick={handleEdit}>
               <Pencil className="h-4 w-4" />
               <span className="hidden sm:inline">Edit</span>
@@ -193,39 +223,67 @@ export default function OrganizationPage() {
               </div>
             </div>
 
-            {/* Plan Features */}
-            <div className="rounded-xl border border-border bg-card p-6">
-              <div className="flex items-center justify-between mb-4">
-                <h3 className="font-semibold">Current Plan</h3>
-                <Badge className={cn('text-xs capitalize', planInfo.color)}>{planInfo.label}</Badge>
-              </div>
-              <ul className="space-y-2 mb-6">
-                {planInfo.features.map((feature, index) => (
-                  <li key={index} className="flex items-center gap-2 text-sm text-muted-foreground">
-                    <div className="h-1.5 w-1.5 rounded-full bg-primary" />
-                    {feature}
-                  </li>
-                ))}
-              </ul>
-              {plan !== 'enterprise' && !isPersonal && (
-                <Button className="w-full gap-2" onClick={() => router.push('/billing')}>
-                  <Sparkles className="h-4 w-4" />
-                  Upgrade Plan
-                </Button>
-              )}
-            </div>
-
-            {/* Danger Zone */}
-            {isAdmin && !isPersonal && (
-              <div className="rounded-xl border border-destructive/20 bg-destructive/5 p-6">
-                <h3 className="font-semibold text-destructive mb-2">Danger Zone</h3>
-                <p className="text-sm text-muted-foreground mb-4">
+            {/* Danger Zone - Allow deletion for all organization types (including personal/trial) */}
+            {isAdmin && (
+              <div className="rounded-xl border border-destructive/20 bg-destructive/5 p-6 space-y-4">
+                <h3 className="font-semibold text-destructive">Danger Zone</h3>
+                <p className="text-sm text-muted-foreground">
                   Once you delete an organization, there is no going back. All data will be permanently removed.
                 </p>
-                <Button variant="destructive" className="gap-2" onClick={() => setIsDeleteOpen(true)}>
+
+                {/* Show error if deletion failed */}
+                {deleteError && (
+                  <Alert variant="destructive">
+                    <AlertTriangle className="h-4 w-4" />
+                    <AlertTitle>Cannot Delete Organization</AlertTitle>
+                    <AlertDescription>{deleteError}</AlertDescription>
+                  </Alert>
+                )}
+
+                {/* Show warning if there's an active subscription */}
+                {deletionStatus && !deletionStatus.canDelete && (
+                  <Alert>
+                    <AlertTriangle className="h-4 w-4" />
+                    <AlertTitle>Active Subscription</AlertTitle>
+                    <AlertDescription className="space-y-2">
+                      <p>{deletionStatus.reason}</p>
+                      {deletionStatus.hasActiveSubscription && !deletionStatus.cancelAtPeriodEnd && (
+                        <Button asChild variant="outline" size="sm" className="mt-2 gap-2">
+                          <Link href="/administration/billing">
+                            <CreditCard className="h-4 w-4" />
+                            Go to Billing
+                          </Link>
+                        </Button>
+                      )}
+                      {deletionStatus.cancelAtPeriodEnd && deletionStatus.currentPeriodEnd && (
+                        <p className="text-xs text-muted-foreground">
+                          Your subscription will end on{' '}
+                          {new Date(deletionStatus.currentPeriodEnd).toLocaleDateString('en-US', {
+                            month: 'long',
+                            day: 'numeric',
+                            year: 'numeric',
+                          })}
+                        </p>
+                      )}
+                    </AlertDescription>
+                  </Alert>
+                )}
+
+                <Button
+                  variant="destructive"
+                  className="gap-2"
+                  onClick={openDeleteDialog}
+                  disabled={deletionStatus && !deletionStatus.canDelete}
+                >
                   <Trash2 className="h-4 w-4" />
                   Delete Organization
                 </Button>
+
+                {deletionStatus && !deletionStatus.canDelete && (
+                  <p className="text-xs text-muted-foreground">
+                    Cancel your subscription first to enable organization deletion.
+                  </p>
+                )}
               </div>
             )}
           </div>

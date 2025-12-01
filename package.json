@@ -96,6 +96,7 @@
     "recharts": "3.5.1",
     "slugify": "^1.6.6",
     "sonner": "^2.0.7",
+    "stripe": "^20.0.0",
     "tailwind-merge": "^3.4.0",
     "tldts": "^7.0.19",
     "vaul": "^1.1.2",

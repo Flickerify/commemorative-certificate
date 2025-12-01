@@ -1,10 +1,12 @@
-import { UserIdentity } from 'convex/server';
+import type { Event as WorkosEvent } from '@workos-inc/node';
+import type Stripe from 'stripe';
 
 import { Doc } from '../_generated/dataModel';
-import { ActionCtx } from '../_generated/server';
 
 declare module 'hono' {
   interface ContextVariableMap {
     user: Doc<'users'>;
+    workosEvent: WorkosEvent;
+    stripeEvent: Stripe.Event;
   }
 }

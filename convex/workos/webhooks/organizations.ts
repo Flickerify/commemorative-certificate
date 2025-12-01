@@ -1,4 +1,4 @@
-import type { HttpHonoEnv } from '../../types';
+import type { WorkosHonoEnv } from '../../types';
 
 import { ConvexError } from 'convex/values';
 import { Context } from 'hono';
@@ -6,7 +6,7 @@ import { Context } from 'hono';
 import { internal } from '../../_generated/api';
 import { Id } from '../../_generated/dataModel';
 
-export async function handleOrganizationWebhooks(ctx: Context<HttpHonoEnv>) {
+export async function handleOrganizationWebhooks(ctx: Context<WorkosHonoEnv>) {
   const event = ctx.var.workosEvent;
   let convexId: Id<'organizations'>;
 

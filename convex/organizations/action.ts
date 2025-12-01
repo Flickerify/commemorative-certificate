@@ -3,37 +3,197 @@
 import { ConvexError, v } from 'convex/values';
 import { protectedAction } from '../functions';
 import { WorkOS } from '@workos-inc/node';
+import { stripe, isPersonalTierPrice, getTierFromPriceId, TRIAL_PERIOD_DAYS } from '../billing/stripe';
+import { api, internal } from '../_generated/api';
+import type { Id } from '../_generated/dataModel';
 
 /**
- * Create a new organization in WorkOS.
- * This will trigger a webhook that syncs the organization to Convex.
+ * Create a new organization in WorkOS with Stripe billing integration.
+ * Organizations require a paid subscription (Pro or Enterprise).
+ * Following the WorkOS Stripe Connect pattern:
+ * https://workos.com/docs/authkit/add-ons/stripe/connect-to-stripe
+ *
+ * Flow:
+ * 1. Create organization in WorkOS
+ * 2. Optimistically insert organization into Convex (webhooks will update later)
+ * 3. Create Stripe customer for the organization
+ * 4. Update WorkOS organization with stripeCustomerId (enables entitlements + seat sync)
+ * 5. Store the Stripe customer binding in Convex
+ * 6. Add the current user as owner in WorkOS
+ * 7. Optimistically insert membership into Convex
+ * 8. Create Stripe checkout session for subscription
+ *
+ * Note: Tier is NOT stored in WorkOS metadata. It comes from organizationSubscriptions table.
+ *
+ * @param name - Organization name
+ * @param priceId - Stripe price ID to subscribe to (Pro/Enterprise) - REQUIRED
+ * @param successUrl - Redirect URL after successful checkout
+ * @param cancelUrl - Redirect URL if checkout cancelled
  */
 export const create = protectedAction({
   args: {
     name: v.string(),
+    priceId: v.string(),
+    successUrl: v.string(),
+    cancelUrl: v.string(),
   },
-  async handler(ctx, { name }) {
+  async handler(ctx, { name, priceId, successUrl, cancelUrl }) {
     const workos = new WorkOS(process.env.WORKOS_API_KEY);
 
-    // Create organization in WorkOS
+    // Determine tier from price ID
+    const tier = getTierFromPriceId(priceId);
+
+    // 1. Create organization in WorkOS with tier metadata
     const organization = await workos.organizations.createOrganization({
       name,
       metadata: {
-        tier: 'free',
+        tier,
       },
     });
+    console.log(`[WorkOS] Created organization ${organization.id} (${name}) with tier: ${tier}`);
 
-    // Add the current user as owner
+    // 2. Optimistically insert organization into Convex with tier metadata
+    // This allows the organization switcher to work immediately
+    const convexOrgId: Id<'organizations'> = await ctx.runMutation(
+      internal.organizations.internal.mutation.upsertFromWorkos,
+      {
+        externalId: organization.id,
+        name: organization.name,
+        metadata: { tier },
+        domains: [],
+      },
+    );
+    console.log(`[Convex] Optimistically inserted organization ${convexOrgId}`);
+
+    // 3. Create Stripe customer for this organization
+    const stripeCustomer = await stripe.customers.create({
+      email: ctx.user.email,
+      name: organization.name,
+      metadata: {
+        workosOrganizationId: organization.id,
+        organizationName: organization.name,
+      },
+    });
+    console.log(`[Stripe] Created customer ${stripeCustomer.id} for organization ${organization.name}`);
+
+    // 4. Update WorkOS organization with Stripe customer ID
+    // This enables WorkOS Stripe features: entitlements + seat sync
+    await workos.organizations.updateOrganization({
+      organization: organization.id,
+      stripeCustomerId: stripeCustomer.id,
+    });
+    console.log(
+      `[WorkOS + Stripe] Connected stripeCustomerId ${stripeCustomer.id} to WorkOS organization ${organization.id}`,
+    );
+
+    // 5. Store Stripe customer binding in Convex immediately (org now exists)
+    await ctx.runMutation(internal.billing.internal.mutation.upsertStripeCustomer, {
+      organizationId: convexOrgId,
+      stripeCustomerId: stripeCustomer.id,
+    });
+    console.log(`[Convex] Stored Stripe customer binding for organization ${convexOrgId}`);
+
+    // 6. Add the current user as owner in WorkOS
     await workos.userManagement.createOrganizationMembership({
       organizationId: organization.id,
       userId: ctx.user.externalId,
       roleSlug: 'owner',
     });
+    console.log(`[WorkOS] Added user ${ctx.user.externalId} as owner of organization ${organization.id}`);
 
-    return {
-      id: organization.id,
-      name: organization.name,
-    };
+    // 7. Optimistically insert membership into Convex
+    // The webhook will arrive later and update any additional fields
+    await ctx.runMutation(internal.organizationMemberships.internal.mutation.upsertFromWorkos, {
+      organizationId: organization.id,
+      userId: ctx.user.externalId,
+      role: 'owner',
+      status: 'active',
+    });
+    console.log(`[Convex] Optimistically inserted membership for user ${ctx.user.externalId}`);
+
+    // 8. Handle subscription based on tier
+    const isPersonalTrial = isPersonalTierPrice(priceId);
+
+    if (isPersonalTrial) {
+      // PERSONAL TIER: Create subscription with trial directly (no checkout needed)
+      // This allows users to start using the app immediately without payment
+      const subscription = await stripe.subscriptions.create({
+        customer: stripeCustomer.id,
+        items: [{ price: priceId }],
+        trial_period_days: TRIAL_PERIOD_DAYS,
+        metadata: {
+          workosOrganizationId: organization.id,
+        },
+        // Allow subscription without payment method during trial
+        payment_behavior: 'default_incomplete',
+        payment_settings: {
+          save_default_payment_method: 'on_subscription',
+        },
+      });
+
+      console.log(
+        `[Stripe] Created trial subscription ${subscription.id} for organization ${organization.name} (${TRIAL_PERIOD_DAYS}-day trial)`,
+      );
+
+      // Note: The Stripe webhook will handle syncing the subscription to Convex
+      // No need to store pending checkout since there's no checkout
+
+      return {
+        workosOrganizationId: organization.id,
+        convexOrganizationId: convexOrgId,
+        name: organization.name,
+        stripeCustomerId: stripeCustomer.id,
+        subscriptionId: subscription.id,
+        checkoutSessionId: null,
+        checkoutUrl: null, // No checkout needed for trial
+      };
+    } else {
+      // PRO/ENTERPRISE: Create checkout session for immediate payment
+      const checkout = await stripe.checkout.sessions.create({
+        customer: stripeCustomer.id,
+        mode: 'subscription',
+        line_items: [
+          {
+            price: priceId,
+            quantity: 1,
+          },
+        ],
+        success_url: successUrl,
+        cancel_url: cancelUrl,
+        subscription_data: {
+          metadata: {
+            workosOrganizationId: organization.id,
+          },
+        },
+        metadata: {
+          workosOrganizationId: organization.id,
+          convexOrganizationId: convexOrgId,
+        },
+        // Checkout session expires after 24 hours by default
+        expires_at: Math.floor(Date.now() / 1000) + 60 * 60 * 24, // 24 hours
+      });
+
+      console.log(`[Stripe] Created checkout session ${checkout.id} for organization ${organization.name}`);
+
+      // Store pending checkout state so we can track/recover abandoned checkouts
+      await ctx.runMutation(internal.billing.internal.mutation.createPendingSubscription, {
+        organizationId: convexOrgId,
+        stripeCustomerId: stripeCustomer.id,
+        checkoutSessionId: checkout.id,
+        priceId,
+      });
+      console.log(`[Convex] Stored pending checkout for organization ${convexOrgId}`);
+
+      return {
+        workosOrganizationId: organization.id,
+        convexOrganizationId: convexOrgId,
+        name: organization.name,
+        stripeCustomerId: stripeCustomer.id,
+        subscriptionId: null,
+        checkoutSessionId: checkout.id,
+        checkoutUrl: checkout.url,
+      };
+    }
   },
 });
 
@@ -54,6 +214,11 @@ export const update = protectedAction({
       name,
     });
 
+    await ctx.runMutation(internal.organizations.internal.mutation.upsertFromWorkos, {
+      externalId: organization.id,
+      name: organization.name,
+    });
+
     return {
       id: organization.id,
       name: organization.name,
@@ -64,15 +229,41 @@ export const update = protectedAction({
 /**
  * Delete an organization from WorkOS.
  * This will trigger a webhook that removes it from Convex.
+ *
+ * IMPORTANT: Organizations with active subscriptions cannot be deleted.
+ * The user must first cancel their subscription via the billing portal.
  */
 export const remove = protectedAction({
   args: {
     organizationId: v.string(),
   },
   async handler(ctx, { organizationId }) {
-    const workos = new WorkOS(process.env.WORKOS_API_KEY);
+    // First, find the Convex organization by its WorkOS external ID
+    const organization = await ctx.runQuery(internal.organizations.internal.query.getByExternalId, {
+      externalId: organizationId,
+    });
 
+    if (!organization) {
+      throw new ConvexError('Organization not found');
+    }
+
+    // Check if the organization can be deleted (no active subscription)
+    const deletionCheck = await ctx.runQuery(internal.billing.query.canDeleteOrganizationInternal, {
+      organizationId: organization._id,
+    });
+
+    if (!deletionCheck.canDelete) {
+      throw new ConvexError(
+        deletionCheck.reason ||
+          'Cannot delete organization with an active subscription. Please cancel your subscription first.',
+      );
+    }
+
+    // Safe to delete - proceed with WorkOS deletion
+    const workos = new WorkOS(process.env.WORKOS_API_KEY);
     await workos.organizations.deleteOrganization(organizationId);
+
+    console.log(`[WorkOS] Deleted organization ${organizationId}`);
 
     return { success: true };
   },

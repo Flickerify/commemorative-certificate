@@ -1,9 +1,9 @@
 import { ConvexError } from 'convex/values';
 import { Context } from 'hono';
 import { internal } from '../../_generated/api';
-import type { HttpHonoEnv } from '../../types';
+import type { WorkosHonoEnv } from '../../types';
 
-export async function handleMembershipWebhooks(ctx: Context<HttpHonoEnv>) {
+export async function handleMembershipWebhooks(ctx: Context<WorkosHonoEnv>) {
   const event = ctx.var.workosEvent;
 
   try {

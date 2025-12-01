@@ -3,22 +3,31 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAction, useQuery } from 'convex/react';
+import { useAuth } from '@workos-inc/authkit-nextjs/components';
 import { api } from '@/convex/_generated/api';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Badge } from '@/components/ui/badge';
+import { Switch } from '@/components/ui/switch';
 import { cn } from '@/lib/utils';
 import {
   CheckCircle2,
   Globe,
   Sparkles,
   ArrowRight,
+  ArrowLeft,
   Loader2,
   Zap,
   Shield,
   Users,
   BarChart3,
+  Building2,
+  User,
+  Check,
 } from 'lucide-react';
 
 const LANGUAGES = [
@@ -52,16 +61,61 @@ const FEATURES = [
   },
 ];
 
-type Step = 'welcome' | 'language' | 'complete';
+// Plans configuration
+const plans = [
+  {
+    id: 'personal' as const,
+    name: 'Personal',
+    description: 'For individuals getting started',
+    icon: User,
+    trial: true,
+    monthlyPrice: 29.99,
+    yearlyPrice: 299.99,
+    priceIdMonthly: process.env.NEXT_PUBLIC_PRICE_PERSONAL_MONTHLY,
+    priceIdYearly: process.env.NEXT_PUBLIC_PRICE_PERSONAL_YEARLY,
+    features: ['1 team member', 'Basic API access', 'Standard schemas', 'Community support'],
+  },
+  {
+    id: 'pro' as const,
+    name: 'Pro',
+    description: 'For small teams ready to scale',
+    icon: Users,
+    popular: true,
+    monthlyPrice: 59.99,
+    yearlyPrice: 599.99,
+    priceIdMonthly: process.env.NEXT_PUBLIC_PRICE_PRO_MONTHLY,
+    priceIdYearly: process.env.NEXT_PUBLIC_PRICE_PRO_YEARLY,
+    features: ['Up to 3 team members', 'Advanced API access', 'Custom schemas', 'Email support'],
+  },
+  {
+    id: 'enterprise' as const,
+    name: 'Enterprise',
+    description: 'For organizations with advanced needs',
+    icon: Building2,
+    monthlyPrice: 599.99,
+    yearlyPrice: 5999.99,
+    priceIdMonthly: process.env.NEXT_PUBLIC_PRICE_ENTERPRISE_MONTHLY,
+    priceIdYearly: process.env.NEXT_PUBLIC_PRICE_ENTERPRISE_YEARLY,
+    features: ['Unlimited team members', 'Priority support', 'SSO/SAML', 'Custom integrations'],
+  },
+];
+
+type Step = 'welcome' | 'language' | 'organization' | 'plan' | 'complete';
 
 export default function OnboardingPage() {
   const router = useRouter();
+  const { switchToOrganization } = useAuth();
   const user = useQuery(api.users.query.me);
   const completeOnboarding = useAction(api.users.action.completeOnboarding);
+  const createOrganization = useAction(api.organizations.action.create);
 
-  const [selectedLocale, setSelectedLocale] = useState<string>('en');
-  const [isSubmitting, setIsSubmitting] = useState(false);
   const [step, setStep] = useState<Step>('welcome');
+  const [selectedLocale, setSelectedLocale] = useState<string>('en');
+  const [orgName, setOrgName] = useState('');
+  const [selectedPlan, setSelectedPlan] = useState<'personal' | 'pro' | 'enterprise'>('personal');
+  const [isYearly, setIsYearly] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   // Redirect if already onboarded
   if (user?.metadata?.onboardingComplete === 'true') {
@@ -69,19 +123,102 @@ export default function OnboardingPage() {
     return null;
   }
 
+  // Set default org name when user data loads
+  if (user && !orgName) {
+    setOrgName(`${user.firstName || 'My'}'s Workspace`);
+  }
+
+  const handleNext = () => {
+    setError(null);
+    switch (step) {
+      case 'welcome':
+        setStep('language');
+        break;
+      case 'language':
+        setStep('organization');
+        break;
+      case 'organization':
+        if (!orgName.trim()) {
+          setError('Organization name is required');
+          return;
+        }
+        setStep('plan');
+        break;
+    }
+  };
+
+  const handleBack = () => {
+    setError(null);
+    switch (step) {
+      case 'language':
+        setStep('welcome');
+        break;
+      case 'organization':
+        setStep('language');
+        break;
+      case 'plan':
+        setStep('organization');
+        break;
+    }
+  };
+
   const handleComplete = async () => {
+    setError(null);
     setIsSubmitting(true);
+
+    const plan = plans.find((p) => p.id === selectedPlan);
+    if (!plan) {
+      setError('Please select a plan');
+      setIsSubmitting(false);
+      return;
+    }
+
+    const priceId = isYearly ? plan.priceIdYearly : plan.priceIdMonthly;
+    if (!priceId) {
+      setError('Pricing not configured. Please contact support.');
+      setIsSubmitting(false);
+      return;
+    }
+
     try {
+      // 1. Create the organization with subscription
+      const result = await createOrganization({
+        name: orgName.trim(),
+        priceId,
+        successUrl: `${window.location.origin}/?onboarding=complete`,
+        cancelUrl: `${window.location.origin}/onboarding?step=plan&canceled=true`,
+      });
+
+      // 2. Complete onboarding (save language preference)
       await completeOnboarding({
         preferredLocale: selectedLocale as 'en' | 'de' | 'fr' | 'it' | 'rm',
       });
-      setStep('complete');
-      setTimeout(() => {
-        router.replace('/');
-      }, 1500);
-    } catch (error) {
-      console.error('Failed to complete onboarding:', error);
-    } finally {
+
+      // 3. Switch to the new organization
+      // Wait for auth state to propagate before redirecting
+      await switchToOrganization(result.workosOrganizationId);
+      console.log(`[Onboarding] Switched to organization: ${result.workosOrganizationId}`);
+
+      // Small delay to ensure auth cookies are set before redirect
+      await new Promise((resolve) => setTimeout(resolve, 500));
+
+      // 4. Handle redirect based on plan type
+      const checkoutUrl = result.checkoutUrl;
+      if (checkoutUrl) {
+        // Pro/Enterprise: Redirect immediately to Stripe checkout for payment
+        // No need to show "complete" step - Stripe will redirect to dashboard after payment
+        console.log(`[Onboarding] Redirecting to Stripe checkout`);
+        window.location.href = checkoutUrl;
+      } else {
+        // Personal trial: Show success and go to dashboard (no payment needed)
+        setStep('complete');
+        console.log(`[Onboarding] Personal trial started, redirecting to dashboard`);
+        setTimeout(() => {
+          window.location.href = '/?onboarding=complete&trial=started';
+        }, 1000);
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to create organization');
       setIsSubmitting(false);
     }
   };
@@ -101,6 +238,9 @@ export default function OnboardingPage() {
       </div>
     );
   }
+
+  const steps: Step[] = ['welcome', 'language', 'organization', 'plan', 'complete'];
+  const currentStepIndex = steps.indexOf(step);
 
   return (
     <div className="flex min-h-screen">
@@ -141,24 +281,20 @@ export default function OnboardingPage() {
         </div>
 
         {/* Footer */}
-        <p className="text-sm text-muted-foreground">
-          © {new Date().getFullYear()} Flickerify. All rights reserved.
-        </p>
+        <p className="text-sm text-muted-foreground">© {new Date().getFullYear()} Flickerify. All rights reserved.</p>
       </div>
 
       {/* Right side - Onboarding Steps */}
-      <div className="flex-1 flex items-center justify-center p-6 lg:p-12">
-        <div className="w-full max-w-md">
+      <div className="flex-1 flex items-center justify-center p-6 lg:p-12 overflow-y-auto">
+        <div className="w-full max-w-lg">
           {/* Progress indicator */}
           <div className="flex items-center gap-2 mb-8">
-            {(['welcome', 'language', 'complete'] as Step[]).map((s, index) => (
+            {steps.slice(0, -1).map((s, index) => (
               <div
                 key={s}
                 className={cn(
                   'h-1.5 flex-1 rounded-full transition-colors',
-                  step === s || (step === 'complete' && index < 2) || (step === 'language' && index === 0)
-                    ? 'bg-primary'
-                    : 'bg-border'
+                  index <= currentStepIndex ? 'bg-primary' : 'bg-border',
                 )}
               />
             ))}
@@ -167,7 +303,6 @@ export default function OnboardingPage() {
           {/* Step: Welcome */}
           {step === 'welcome' && (
             <div className="space-y-8">
-              {/* User greeting */}
               <div className="text-center">
                 <Avatar className="h-20 w-20 mx-auto mb-4 border-2 border-border">
                   <AvatarImage src={user?.profilePictureUrl || undefined} />
@@ -175,15 +310,10 @@ export default function OnboardingPage() {
                     {getInitials()}
                   </AvatarFallback>
                 </Avatar>
-                <h2 className="text-2xl font-bold mb-2">
-                  Welcome{user?.firstName ? `, ${user.firstName}` : ''}!
-                </h2>
-                <p className="text-muted-foreground">
-                  Let's personalize your experience in just a moment.
-                </p>
+                <h2 className="text-2xl font-bold mb-2">Welcome{user?.firstName ? `, ${user.firstName}` : ''}!</h2>
+                <p className="text-muted-foreground">Let's set up your workspace in just a few steps.</p>
               </div>
 
-              {/* Info card */}
               <div className="rounded-xl border border-border bg-card p-6">
                 <div className="flex items-start gap-4">
                   <div className="h-12 w-12 rounded-xl bg-primary/10 flex items-center justify-center shrink-0">
@@ -192,14 +322,13 @@ export default function OnboardingPage() {
                   <div>
                     <h3 className="font-semibold mb-1">Quick Setup</h3>
                     <p className="text-sm text-muted-foreground">
-                      We'll help you configure your preferences so you can get started right away.
-                      This will only take a few seconds.
+                      We'll help you configure your preferences and create your first organization. This will only take
+                      a minute.
                     </p>
                   </div>
                 </div>
               </div>
 
-              {/* Mobile features (shown only on mobile) */}
               <div className="lg:hidden space-y-3">
                 {FEATURES.slice(0, 2).map((feature, index) => (
                   <div key={index} className="flex items-center gap-3 text-sm text-muted-foreground">
@@ -209,7 +338,7 @@ export default function OnboardingPage() {
                 ))}
               </div>
 
-              <Button onClick={() => setStep('language')} className="w-full h-11 gap-2">
+              <Button onClick={handleNext} className="w-full h-11 gap-2">
                 Get Started
                 <ArrowRight className="h-4 w-4" />
               </Button>
@@ -224,9 +353,7 @@ export default function OnboardingPage() {
                   <Globe className="h-8 w-8 text-primary" />
                 </div>
                 <h2 className="text-2xl font-bold mb-2">Choose Your Language</h2>
-                <p className="text-muted-foreground">
-                  Select your preferred language for the interface.
-                </p>
+                <p className="text-muted-foreground">Select your preferred language for the interface.</p>
               </div>
 
               <RadioGroup value={selectedLocale} onValueChange={setSelectedLocale} className="space-y-2">
@@ -238,32 +365,203 @@ export default function OnboardingPage() {
                       'flex cursor-pointer items-center gap-4 rounded-xl border p-4 transition-all',
                       selectedLocale === lang.value
                         ? 'border-primary bg-primary/5 ring-1 ring-primary'
-                        : 'border-border hover:border-primary/50 hover:bg-accent/50'
+                        : 'border-border hover:border-primary/50 hover:bg-accent/50',
                     )}
                   >
                     <RadioGroupItem value={lang.value} id={lang.value} className="sr-only" />
                     <span className="text-2xl">{lang.flag}</span>
                     <span className="flex-1 font-medium">{lang.label}</span>
-                    {selectedLocale === lang.value && (
-                      <CheckCircle2 className="h-5 w-5 text-primary" />
-                    )}
+                    {selectedLocale === lang.value && <CheckCircle2 className="h-5 w-5 text-primary" />}
                   </Label>
                 ))}
               </RadioGroup>
 
               <div className="flex gap-3">
-                <Button variant="outline" onClick={() => setStep('welcome')} className="flex-1 h-11">
+                <Button variant="outline" onClick={handleBack} className="flex-1 h-11 gap-2">
+                  <ArrowLeft className="h-4 w-4" />
+                  Back
+                </Button>
+                <Button onClick={handleNext} className="flex-1 h-11 gap-2">
+                  Continue
+                  <ArrowRight className="h-4 w-4" />
+                </Button>
+              </div>
+            </div>
+          )}
+
+          {/* Step: Organization Name */}
+          {step === 'organization' && (
+            <div className="space-y-8">
+              <div className="text-center">
+                <div className="h-16 w-16 rounded-2xl bg-primary/10 flex items-center justify-center mx-auto mb-4">
+                  <Building2 className="h-8 w-8 text-primary" />
+                </div>
+                <h2 className="text-2xl font-bold mb-2">Name Your Workspace</h2>
+                <p className="text-muted-foreground">This is your organization where you'll manage everything.</p>
+              </div>
+
+              <div className="space-y-4">
+                <div className="rounded-xl border border-border bg-card p-6">
+                  <div className="flex items-start gap-4 mb-6">
+                    <div className="h-14 w-14 rounded-xl bg-gradient-to-br from-primary to-primary/80 flex items-center justify-center text-primary-foreground font-bold text-lg">
+                      {orgName ? orgName.charAt(0).toUpperCase() : 'O'}
+                    </div>
+                    <div className="flex-1">
+                      <h3 className="font-semibold text-lg">{orgName || 'Your Workspace'}</h3>
+                      <p className="text-sm text-muted-foreground">You'll choose your plan next</p>
+                    </div>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="orgName">Organization Name</Label>
+                    <Input
+                      id="orgName"
+                      type="text"
+                      placeholder="Acme Corporation"
+                      value={orgName}
+                      onChange={(e) => setOrgName(e.target.value)}
+                      className="text-base"
+                      autoFocus
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' && orgName.trim()) {
+                          handleNext();
+                        }
+                      }}
+                    />
+                  </div>
+                </div>
+
+                {error && <p className="text-sm text-destructive text-center">{error}</p>}
+              </div>
+
+              <div className="flex gap-3">
+                <Button variant="outline" onClick={handleBack} className="flex-1 h-11 gap-2">
+                  <ArrowLeft className="h-4 w-4" />
+                  Back
+                </Button>
+                <Button onClick={handleNext} disabled={!orgName.trim()} className="flex-1 h-11 gap-2">
+                  Continue
+                  <ArrowRight className="h-4 w-4" />
+                </Button>
+              </div>
+            </div>
+          )}
+
+          {/* Step: Plan Selection */}
+          {step === 'plan' && (
+            <div className="space-y-6">
+              <div className="text-center">
+                <h2 className="text-2xl font-bold mb-2">Choose Your Plan</h2>
+                <p className="text-muted-foreground">
+                  Start with a 14-day free trial on Personal, or go Pro right away.
+                </p>
+              </div>
+
+              {/* Billing toggle */}
+              <div className="flex items-center justify-center gap-3">
+                <Label htmlFor="billing-toggle" className={cn(!isYearly && 'font-medium')}>
+                  Monthly
+                </Label>
+                <Switch id="billing-toggle" checked={isYearly} onCheckedChange={setIsYearly} />
+                <Label htmlFor="billing-toggle" className={cn(isYearly && 'font-medium')}>
+                  Yearly
+                  <Badge variant="secondary" className="ml-2">
+                    Save 17%
+                  </Badge>
+                </Label>
+              </div>
+
+              {/* Plans */}
+              <div className="space-y-3">
+                {plans.map((plan) => {
+                  const isSelected = selectedPlan === plan.id;
+                  const price = isYearly ? plan.yearlyPrice : plan.monthlyPrice;
+                  const PlanIcon = plan.icon;
+
+                  return (
+                    <Card
+                      key={plan.id}
+                      className={cn(
+                        'relative cursor-pointer transition-all hover:border-primary/50',
+                        isSelected && 'border-primary ring-2 ring-primary',
+                        plan.popular && 'shadow-md',
+                      )}
+                      onClick={() => setSelectedPlan(plan.id)}
+                    >
+                      <CardHeader className="pb-3">
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-3">
+                            <div
+                              className={cn(
+                                'h-10 w-10 rounded-lg flex items-center justify-center',
+                                isSelected ? 'bg-primary text-primary-foreground' : 'bg-muted',
+                              )}
+                            >
+                              <PlanIcon className="h-5 w-5" />
+                            </div>
+                            <div>
+                              <CardTitle className="text-base flex items-center gap-2">
+                                {plan.name}
+                                {plan.trial && (
+                                  <Badge
+                                    variant="secondary"
+                                    className="bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400"
+                                  >
+                                    14-day free trial
+                                  </Badge>
+                                )}
+                                {plan.popular && <Badge>Popular</Badge>}
+                              </CardTitle>
+                              <CardDescription>{plan.description}</CardDescription>
+                            </div>
+                          </div>
+                          <div className="text-right">
+                            <div className="text-2xl font-bold">${price}</div>
+                            <div className="text-xs text-muted-foreground">/{isYearly ? 'year' : 'month'}</div>
+                          </div>
+                        </div>
+                      </CardHeader>
+                      <CardContent className="pt-0">
+                        <div className="flex flex-wrap gap-2">
+                          {plan.features.map((feature) => (
+                            <div key={feature} className="flex items-center gap-1 text-xs text-muted-foreground">
+                              <Check className="h-3 w-3 text-emerald-500" />
+                              {feature}
+                            </div>
+                          ))}
+                        </div>
+                        {plan.trial && (
+                          <p className="text-xs text-emerald-600 dark:text-emerald-400 mt-2">
+                            Free for 14 days, then ${price}/{isYearly ? 'year' : 'month'}
+                          </p>
+                        )}
+                      </CardContent>
+                    </Card>
+                  );
+                })}
+              </div>
+
+              {error && <p className="text-sm text-destructive text-center">{error}</p>}
+
+              <div className="flex gap-3">
+                <Button variant="outline" onClick={handleBack} disabled={isSubmitting} className="flex-1 h-11 gap-2">
+                  <ArrowLeft className="h-4 w-4" />
                   Back
                 </Button>
                 <Button onClick={handleComplete} disabled={isSubmitting} className="flex-1 h-11 gap-2">
                   {isSubmitting ? (
                     <>
                       <Loader2 className="h-4 w-4 animate-spin" />
-                      Saving…
+                      Creating…
+                    </>
+                  ) : selectedPlan === 'personal' ? (
+                    <>
+                      Start Free Trial
+                      <ArrowRight className="h-4 w-4" />
                     </>
                   ) : (
                     <>
-                      Complete Setup
+                      Continue to Payment
                       <ArrowRight className="h-4 w-4" />
                     </>
                   )}
@@ -272,7 +570,7 @@ export default function OnboardingPage() {
             </div>
           )}
 
-          {/* Step: Complete */}
+          {/* Step: Complete - Only shown for Personal trial */}
           {step === 'complete' && (
             <div className="space-y-8 text-center">
               <div>
@@ -281,7 +579,7 @@ export default function OnboardingPage() {
                 </div>
                 <h2 className="text-2xl font-bold mb-2">You're All Set!</h2>
                 <p className="text-muted-foreground">
-                  Your preferences have been saved. Redirecting you to the dashboard…
+                  Your 14-day free trial has started. Redirecting to your dashboard…
                 </p>
               </div>
 

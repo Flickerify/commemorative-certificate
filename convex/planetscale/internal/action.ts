@@ -91,3 +91,42 @@ export const deleteOrganization = internalAction({
     return { success: true };
   },
 });
+
+/**
+ * Update organization subscription tier in PlanetScale.
+ * Called when subscription data is synced from Stripe.
+ */
+export const updateOrganizationSubscription = internalAction({
+  args: {
+    workosId: v.string(),
+    tier: v.union(v.literal('personal'), v.literal('pro'), v.literal('enterprise')),
+    status: v.union(
+      v.literal('active'),
+      v.literal('canceled'),
+      v.literal('incomplete'),
+      v.literal('incomplete_expired'),
+      v.literal('past_due'),
+      v.literal('paused'),
+      v.literal('trialing'),
+      v.literal('unpaid'),
+      v.literal('none'),
+    ),
+  },
+  returns: v.object({ success: v.boolean() }),
+  handler: async (ctx, args) => {
+    const { workosId, tier, status } = args;
+
+    await db
+      .update(organizations)
+      .set({
+        subscriptionTier: tier,
+        subscriptionStatus: status,
+        updatedAt: new Date(),
+      })
+      .where(eq(organizations.workosId, workosId));
+
+    console.log(`[PlanetScale] Updated subscription for organization ${workosId}: tier=${tier}, status=${status}`);
+
+    return { success: true };
+  },
+});

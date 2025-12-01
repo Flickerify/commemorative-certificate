@@ -1,8 +1,9 @@
 'use client';
 
 import { useState } from 'react';
-import { useQuery } from 'convex/react';
+import { useQuery, useMutation } from 'convex/react';
 import { api } from '@/convex/_generated/api';
+import type { Id } from '@/convex/_generated/dataModel';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
@@ -14,6 +15,17 @@ import {
   DialogTitle,
   DialogTrigger,
 } from '@/components/ui/dialog';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from '@/components/ui/alert-dialog';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -28,7 +40,12 @@ import {
   IconChevronRight,
   IconUser,
   IconBuilding,
+  IconRefresh,
+  IconAlertTriangle,
+  IconTrash,
+  IconPlayerPlay,
 } from '@tabler/icons-react';
+import { toast } from 'sonner';
 
 function formatDuration(ms: number | undefined): string {
   if (ms === undefined) return '—';
@@ -335,8 +352,8 @@ function StatsCards() {
 
   if (stats === undefined) {
     return (
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-6">
-        {Array.from({ length: 6 }).map((_, i) => (
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-7">
+        {Array.from({ length: 7 }).map((_, i) => (
           <Card key={i}>
             <CardHeader className="pb-2">
               <Skeleton className="h-4 w-20" />
@@ -356,11 +373,12 @@ function StatsCards() {
     { title: 'Pending', value: stats.pending, color: 'text-yellow-500' },
     { title: 'Success', value: stats.success, color: 'text-green-500' },
     { title: 'Failed', value: stats.failed, color: 'text-red-500' },
+    { title: 'Dead Letter', value: stats.deadLetterCount, color: stats.deadLetterCount > 0 ? 'text-orange-500' : '' },
     { title: 'Avg Duration', value: formatDuration(stats.avgDurationMs), color: '' },
   ];
 
   return (
-    <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-6">
+    <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-7">
       {cards.map((card) => (
         <Card key={card.title}>
           <CardHeader className="pb-2">
@@ -404,6 +422,253 @@ function GroupedSyncSection() {
     </div>
   );
 }
+
+// ============================================================
+// DEAD LETTER QUEUE SECTION
+// ============================================================
+
+type DeadLetterItem = {
+  _id: Id<'deadLetterQueue'>;
+  _creationTime: number;
+  workflowId: string;
+  entityType: 'user' | 'organization' | 'subscription';
+  entityId: string;
+  error: string;
+  retryable: boolean;
+  retryCount: number;
+  lastRetryAt?: number;
+  resolvedAt?: number;
+};
+
+function DeadLetterItemRow({
+  item,
+  onRetry,
+  onResolve,
+  isRetrying,
+}: {
+  item: DeadLetterItem;
+  onRetry: (id: Id<'deadLetterQueue'>) => void;
+  onResolve: (id: Id<'deadLetterQueue'>) => void;
+  isRetrying: boolean;
+}) {
+  return (
+    <TableRow className={item.resolvedAt ? 'opacity-50' : ''}>
+      <TableCell>
+        <div className="flex items-center gap-2">
+          <EntityIcon type={item.entityType === 'subscription' ? 'organization' : item.entityType} />
+          <div>
+            <span className="font-mono text-xs">{item.entityId.slice(0, 16)}…</span>
+            <p className="text-xs text-muted-foreground capitalize">{item.entityType}</p>
+          </div>
+        </div>
+      </TableCell>
+      <TableCell>
+        <code className="rounded bg-muted px-1.5 py-0.5 text-xs">{item.workflowId.slice(0, 12)}…</code>
+      </TableCell>
+      <TableCell>
+        <div className="max-w-xs truncate text-sm text-destructive" title={item.error}>
+          {item.error}
+        </div>
+      </TableCell>
+      <TableCell>
+        <Badge variant="outline">{item.retryCount}</Badge>
+      </TableCell>
+      <TableCell className="text-sm text-muted-foreground">{formatRelativeTime(item._creationTime)}</TableCell>
+      <TableCell>
+        {item.resolvedAt ? (
+          <Badge variant="secondary">Resolved</Badge>
+        ) : (
+          <div className="flex items-center gap-1">
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => onRetry(item._id)}
+              disabled={isRetrying || !item.retryable}
+            >
+              {isRetrying ? <IconLoader2 className="size-4 animate-spin" /> : <IconRefresh className="size-4" />}
+            </Button>
+            <AlertDialog>
+              <AlertDialogTrigger asChild>
+                <Button variant="ghost" size="sm">
+                  <IconCheck className="size-4" />
+                </Button>
+              </AlertDialogTrigger>
+              <AlertDialogContent>
+                <AlertDialogHeader>
+                  <AlertDialogTitle>Mark as Resolved?</AlertDialogTitle>
+                  <AlertDialogDescription>
+                    This will mark the item as resolved without retrying. Use this if you&apos;ve fixed the issue
+                    manually or the sync is no longer needed.
+                  </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                  <AlertDialogCancel>Cancel</AlertDialogCancel>
+                  <AlertDialogAction onClick={() => onResolve(item._id)}>Mark Resolved</AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
+          </div>
+        )}
+      </TableCell>
+    </TableRow>
+  );
+}
+
+function DeadLetterQueueSection() {
+  const items = useQuery(api.sync.query.getDeadLetterQueue, { limit: 50 });
+  const retryItem = useMutation(api.sync.mutation.retryDeadLetterItem);
+  const retryAll = useMutation(api.sync.mutation.retryAllDeadLetterItems);
+  const resolveItem = useMutation(api.sync.mutation.resolveDeadLetterItem);
+
+  const [retryingIds, setRetryingIds] = useState<Set<string>>(new Set());
+  const [isRetryingAll, setIsRetryingAll] = useState(false);
+
+  const handleRetry = async (itemId: Id<'deadLetterQueue'>) => {
+    setRetryingIds((prev) => new Set([...prev, itemId]));
+    try {
+      const result = await retryItem({ itemId });
+      if (result.success) {
+        toast.success('Retry initiated', {
+          description: `New workflow started: ${result.newWorkflowId?.slice(0, 12)}…`,
+        });
+      } else {
+        toast.error('Retry failed', { description: result.error });
+      }
+    } catch (error) {
+      toast.error('Retry failed', {
+        description: error instanceof Error ? error.message : 'Unknown error',
+      });
+    } finally {
+      setRetryingIds((prev) => {
+        const next = new Set(prev);
+        next.delete(itemId);
+        return next;
+      });
+    }
+  };
+
+  const handleResolve = async (itemId: Id<'deadLetterQueue'>) => {
+    try {
+      const result = await resolveItem({ itemId });
+      if (result.success) {
+        toast.success('Item marked as resolved');
+      } else {
+        toast.error('Failed to resolve', { description: result.error });
+      }
+    } catch (error) {
+      toast.error('Failed to resolve', {
+        description: error instanceof Error ? error.message : 'Unknown error',
+      });
+    }
+  };
+
+  const handleRetryAll = async () => {
+    setIsRetryingAll(true);
+    try {
+      const result = await retryAll({});
+      toast.success('Bulk retry complete', {
+        description: `${result.succeeded}/${result.total} succeeded`,
+      });
+      if (result.errors.length > 0) {
+        console.error('Retry errors:', result.errors);
+      }
+    } catch (error) {
+      toast.error('Bulk retry failed', {
+        description: error instanceof Error ? error.message : 'Unknown error',
+      });
+    } finally {
+      setIsRetryingAll(false);
+    }
+  };
+
+  const unresolvedCount = items?.filter((item) => !item.resolvedAt).length ?? 0;
+
+  return (
+    <Card>
+      <CardHeader>
+        <div className="flex items-center justify-between">
+          <div>
+            <CardTitle className="flex items-center gap-2">
+              <IconAlertTriangle className="size-5 text-orange-500" />
+              Dead Letter Queue
+            </CardTitle>
+            <CardDescription>Failed sync operations that need attention</CardDescription>
+          </div>
+          {unresolvedCount > 0 && (
+            <AlertDialog>
+              <AlertDialogTrigger asChild>
+                <Button variant="outline" disabled={isRetryingAll}>
+                  {isRetryingAll ? (
+                    <IconLoader2 className="mr-2 size-4 animate-spin" />
+                  ) : (
+                    <IconPlayerPlay className="mr-2 size-4" />
+                  )}
+                  Retry All ({unresolvedCount})
+                </Button>
+              </AlertDialogTrigger>
+              <AlertDialogContent>
+                <AlertDialogHeader>
+                  <AlertDialogTitle>Retry all failed items?</AlertDialogTitle>
+                  <AlertDialogDescription>
+                    This will attempt to retry all {unresolvedCount} unresolved items in the dead letter queue. Each
+                    item will be processed sequentially.
+                  </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                  <AlertDialogCancel>Cancel</AlertDialogCancel>
+                  <AlertDialogAction onClick={handleRetryAll}>Retry All</AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
+          )}
+        </div>
+      </CardHeader>
+      <CardContent>
+        {items === undefined ? (
+          <div className="space-y-2">
+            {Array.from({ length: 3 }).map((_, i) => (
+              <Skeleton key={i} className="h-12 w-full" />
+            ))}
+          </div>
+        ) : items.length === 0 ? (
+          <div className="flex flex-col items-center justify-center py-8 text-muted-foreground">
+            <IconCheck className="mb-2 size-8 text-green-500" />
+            <p>No items in dead letter queue</p>
+            <p className="text-sm">All syncs are processing normally</p>
+          </div>
+        ) : (
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Entity</TableHead>
+                <TableHead>Workflow ID</TableHead>
+                <TableHead>Error</TableHead>
+                <TableHead>Retries</TableHead>
+                <TableHead>Created</TableHead>
+                <TableHead className="w-24">Actions</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {items.map((item) => (
+                <DeadLetterItemRow
+                  key={item._id}
+                  item={item as DeadLetterItem}
+                  onRetry={handleRetry}
+                  onResolve={handleResolve}
+                  isRetrying={retryingIds.has(item._id)}
+                />
+              ))}
+            </TableBody>
+          </Table>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+// ============================================================
+// RECENT SYNCS TABLE
+// ============================================================
 
 function RecentSyncsTable() {
   const syncs = useQuery(api.sync.query.getSyncsWithWorkflowStatus, { limit: 20 });
@@ -489,6 +754,8 @@ export default function SyncStatusPage() {
       </div>
 
       <StatsCards />
+
+      <DeadLetterQueueSection />
 
       <GroupedSyncSection />
 

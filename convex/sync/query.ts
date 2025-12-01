@@ -170,6 +170,12 @@ export const getSyncStats = protectedAdminQuery({
         ? completedSyncs.reduce((sum, s) => sum + (s.durationMs || 0), 0) / completedSyncs.length
         : 0;
 
+    // Count dead letter queue items
+    const deadLetterItems = await ctx.db
+      .query('deadLetterQueue')
+      .withIndex('by_status', (q) => q.eq('retryable', true).eq('resolvedAt', undefined))
+      .collect();
+
     return {
       total,
       pending,
@@ -177,6 +183,33 @@ export const getSyncStats = protectedAdminQuery({
       failed,
       uniqueEntities,
       avgDurationMs: Math.round(avgDurationMs),
+      deadLetterCount: deadLetterItems.length,
     };
+  },
+});
+
+// ============================================================
+// DEAD LETTER QUEUE QUERIES
+// ============================================================
+
+export const getDeadLetterQueue = protectedAdminQuery({
+  args: {
+    limit: v.optional(v.number()),
+    includeResolved: v.optional(v.boolean()),
+  },
+  handler: async (ctx, args) => {
+    const limit = args.limit ?? 50;
+
+    if (args.includeResolved) {
+      // Get all items
+      return await ctx.db.query('deadLetterQueue').order('desc').take(limit);
+    }
+
+    // Get only unresolved, retryable items
+    return await ctx.db
+      .query('deadLetterQueue')
+      .withIndex('by_status', (q) => q.eq('retryable', true).eq('resolvedAt', undefined))
+      .order('desc')
+      .take(limit);
   },
 });

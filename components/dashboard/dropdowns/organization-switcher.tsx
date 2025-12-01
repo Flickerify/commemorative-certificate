@@ -96,8 +96,18 @@ export function OrganizationSwitcher({ className }: { className?: string }) {
     router.refresh();
   };
 
-  // Loading state
+  // Loading state - show when data is loading OR when we have no organizations yet
+  // This handles the race condition after onboarding where data might not be synced yet
   if (organizations === undefined) {
+    return (
+      <div className={cn('flex h-9 w-9 items-center justify-center rounded-lg bg-muted animate-pulse', className)}>
+        <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+      </div>
+    );
+  }
+
+  // If we have no organizations yet, show loading (data might still be syncing)
+  if (organizations.length === 0) {
     return (
       <div className={cn('flex h-9 w-9 items-center justify-center rounded-lg bg-muted animate-pulse', className)}>
         <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
@@ -108,12 +118,17 @@ export function OrganizationSwitcher({ className }: { className?: string }) {
   // Find current and personal organizations
   const currentOrg = organizations?.find((org) => org.externalId === organizationId);
   const personalOrg = organizations?.find((org) => org.metadata?.tier === 'personal');
-  const isPersonal = currentOrg?.metadata?.tier === 'personal';
   const nonPersonalOrgs = organizations?.filter((org) => org.metadata?.tier !== 'personal') || [];
 
+  // If we have organizations but can't find the current one, use the first available
+  // This handles the case where auth state is stale after org switch
+  const effectiveCurrentOrg = currentOrg || organizations[0];
+
   const getPlanFromOrg = (org: Organization): string => {
-    return (org.metadata?.tier as string) || 'free';
+    return (org.metadata?.tier as string) || 'personal';
   };
+
+  const isEffectivePersonal = effectiveCurrentOrg?.metadata?.tier === 'personal';
 
   return (
     <DropdownMenu>
@@ -127,18 +142,12 @@ export function OrganizationSwitcher({ className }: { className?: string }) {
             className,
           )}
         >
-          {currentOrg ? (
-            <OrgAvatar
-              name={currentOrg.name}
-              logo={currentOrg.metadata?.logoUrl as string | undefined}
-              isPersonal={isPersonal}
-              size="md"
-            />
-          ) : (
-            <div className="flex h-full w-full items-center justify-center bg-linear-to-br from-violet-500 to-violet-600 text-white">
-              <User className="h-5 w-5" />
-            </div>
-          )}
+          <OrgAvatar
+            name={effectiveCurrentOrg.name}
+            logo={effectiveCurrentOrg.metadata?.logoUrl as string | undefined}
+            isPersonal={isEffectivePersonal}
+            size="md"
+          />
           <ChevronDown className="absolute -bottom-0.5 -right-0.5 h-3 w-3 rounded-full bg-sidebar text-sidebar-foreground opacity-0 group-hover:opacity-100 transition-opacity" />
         </button>
       </DropdownMenuTrigger>
@@ -146,36 +155,25 @@ export function OrganizationSwitcher({ className }: { className?: string }) {
         {/* Current Selection Header */}
         <div className="bg-muted/50 px-3 py-3 border-b">
           <div className="flex items-center gap-3">
-            {currentOrg ? (
-              <>
-                <OrgAvatar
-                  name={currentOrg.name}
-                  logo={currentOrg.metadata?.logoUrl as string | undefined}
-                  isPersonal={isPersonal}
-                  size="lg"
-                  className="shadow-sm"
-                />
-                <div className="flex-1 min-w-0">
-                  <p className="font-medium text-sm truncate">{currentOrg.name}</p>
-                  <p className="text-xs text-muted-foreground capitalize">{currentOrg.role || 'Member'}</p>
-                </div>
-                <span
-                  className={cn(
-                    'text-[10px] font-medium px-2 py-0.5 rounded-full capitalize',
-                    planColors[getPlanFromOrg(currentOrg)] || planColors.free,
-                  )}
-                >
-                  {getPlanFromOrg(currentOrg)}
-                </span>
-              </>
-            ) : (
-              <div className="flex items-center gap-3">
-                <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-muted">
-                  <Building2 className="h-5 w-5 text-muted-foreground" />
-                </div>
-                <p className="font-medium text-sm">Select Organization</p>
-              </div>
-            )}
+            <OrgAvatar
+              name={effectiveCurrentOrg.name}
+              logo={effectiveCurrentOrg.metadata?.logoUrl as string | undefined}
+              isPersonal={isEffectivePersonal}
+              size="lg"
+              className="shadow-sm"
+            />
+            <div className="flex-1 min-w-0">
+              <p className="font-medium text-sm truncate">{effectiveCurrentOrg.name}</p>
+              <p className="text-xs text-muted-foreground capitalize">{effectiveCurrentOrg.role || 'Member'}</p>
+            </div>
+            <span
+              className={cn(
+                'text-[10px] font-medium px-2 py-0.5 rounded-full capitalize',
+                planColors[getPlanFromOrg(effectiveCurrentOrg)] || planColors.free,
+              )}
+            >
+              {getPlanFromOrg(effectiveCurrentOrg)}
+            </span>
           </div>
         </div>
 
@@ -186,7 +184,7 @@ export function OrganizationSwitcher({ className }: { className?: string }) {
               onClick={() => handleSwitchToOrganization(personalOrg.externalId)}
               className={cn(
                 'flex items-center gap-3 px-2 py-2.5 rounded-md cursor-pointer',
-                isPersonal && 'bg-primary/5',
+                isEffectivePersonal && 'bg-primary/5',
               )}
             >
               <OrgAvatar name="Personal" isPersonal size="sm" />
@@ -194,7 +192,7 @@ export function OrganizationSwitcher({ className }: { className?: string }) {
                 <p className="text-sm font-medium truncate">Personal Workspace</p>
                 <p className="text-xs text-muted-foreground">Your private space</p>
               </div>
-              {isPersonal && <Check className="h-4 w-4 text-primary shrink-0" />}
+              {isEffectivePersonal && <Check className="h-4 w-4 text-primary shrink-0" />}
             </DropdownMenuItem>
           </DropdownMenuGroup>
         )}
@@ -208,38 +206,41 @@ export function OrganizationSwitcher({ className }: { className?: string }) {
                 Organizations
               </DropdownMenuLabel>
 
-              {nonPersonalOrgs.map((org) => (
-                <DropdownMenuItem
-                  key={org._id}
-                  onClick={() => handleSwitchToOrganization(org.externalId)}
-                  className={cn(
-                    'flex items-center gap-3 px-2 py-2.5 rounded-md cursor-pointer',
-                    organizationId === org.externalId && 'bg-primary/5',
-                  )}
-                >
-                  <OrgAvatar
-                    name={org.name}
-                    logo={org.metadata?.logoUrl as string | undefined}
-                    size="sm"
-                    className="bg-linear-to-br from-muted to-muted/50 text-foreground"
-                  />
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2">
-                      <p className="text-sm font-medium truncate">{org.name}</p>
-                      <span
-                        className={cn(
-                          'text-[9px] font-medium px-1.5 py-0.5 rounded capitalize',
-                          planColors[getPlanFromOrg(org)] || planColors.free,
-                        )}
-                      >
-                        {getPlanFromOrg(org)}
-                      </span>
+              {nonPersonalOrgs.map((org) => {
+                const isCurrentOrg = effectiveCurrentOrg.externalId === org.externalId;
+                return (
+                  <DropdownMenuItem
+                    key={org._id}
+                    onClick={() => handleSwitchToOrganization(org.externalId)}
+                    className={cn(
+                      'flex items-center gap-3 px-2 py-2.5 rounded-md cursor-pointer',
+                      isCurrentOrg && 'bg-primary/5',
+                    )}
+                  >
+                    <OrgAvatar
+                      name={org.name}
+                      logo={org.metadata?.logoUrl as string | undefined}
+                      size="sm"
+                      className="bg-linear-to-br from-muted to-muted/50 text-foreground"
+                    />
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2">
+                        <p className="text-sm font-medium truncate">{org.name}</p>
+                        <span
+                          className={cn(
+                            'text-[9px] font-medium px-1.5 py-0.5 rounded capitalize',
+                            planColors[getPlanFromOrg(org)] || planColors.free,
+                          )}
+                        >
+                          {getPlanFromOrg(org)}
+                        </span>
+                      </div>
+                      <p className="text-xs text-muted-foreground capitalize">{org.role || 'Member'}</p>
                     </div>
-                    <p className="text-xs text-muted-foreground capitalize">{org.role || 'Member'}</p>
-                  </div>
-                  {organizationId === org.externalId && <Check className="h-4 w-4 text-primary shrink-0" />}
-                </DropdownMenuItem>
-              ))}
+                    {isCurrentOrg && <Check className="h-4 w-4 text-primary shrink-0" />}
+                  </DropdownMenuItem>
+                );
+              })}
             </DropdownMenuGroup>
           </>
         )}
@@ -260,7 +261,7 @@ export function OrganizationSwitcher({ className }: { className?: string }) {
         </DropdownMenuGroup>
 
         {/* Organization Management Options */}
-        {!isPersonal && currentOrg && (
+        {!isEffectivePersonal && (
           <>
             <DropdownMenuSeparator className="my-0" />
             <DropdownMenuGroup className="p-1.5">
@@ -290,7 +291,7 @@ export function OrganizationSwitcher({ className }: { className?: string }) {
         )}
 
         {/* Upgrade CTA */}
-        {!isPersonal && currentOrg && getPlanFromOrg(currentOrg) !== 'enterprise' && (
+        {!isEffectivePersonal && getPlanFromOrg(effectiveCurrentOrg) !== 'enterprise' && (
           <>
             <DropdownMenuSeparator className="my-0" />
             <div

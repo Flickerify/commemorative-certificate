@@ -26,6 +26,7 @@ import {
   Activity,
   Settings,
   Layers,
+  CreditCard,
 } from 'lucide-react';
 import type { SpaceType } from './dashboard';
 
@@ -59,6 +60,7 @@ const adminOrgItems = [
   { href: '/administration/organization', icon: Building2, label: 'Organization' },
   { href: '/administration/team', icon: UsersIcon, label: 'Team Members' },
   { href: '/administration/roles', icon: UserCog, label: 'Roles & Permissions' },
+  { href: '/administration/billing', icon: CreditCard, label: 'Billing' },
 ];
 
 const adminSecurityItems = [

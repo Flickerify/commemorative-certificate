@@ -1,5 +1,6 @@
 import type { CustomCtx } from 'convex-helpers/server/customFunctions';
 import type { Env, ValidationTargets } from 'hono';
+import type Stripe from 'stripe';
 
 import type { Doc } from '../_generated/dataModel';
 import type { ActionCtx } from '../_generated/server';
@@ -32,9 +33,22 @@ export type ActionContext = {
   ValidationTargets: ValidationTargets;
 };
 
-export type HttpHonoEnv = {
+/**
+ * Hono environment for WorkOS webhooks.
+ */
+export type WorkosHonoEnv = {
   Variables: {
     workosEvent: WorkosEvent;
+  };
+  Bindings: ActionCtx;
+};
+
+/**
+ * Hono environment for Stripe webhooks.
+ */
+export type StripeHonoEnv = {
+  Variables: {
+    stripeEvent: Stripe.Event;
   };
   Bindings: ActionCtx;
 };

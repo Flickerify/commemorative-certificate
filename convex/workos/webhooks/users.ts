@@ -3,7 +3,7 @@ import { Context } from 'hono';
 import { Id } from '../../_generated/dataModel';
 
 import { internal } from '../../_generated/api';
-import type { HttpHonoEnv } from '../../types';
+import type { WorkosHonoEnv } from '../../types';
 import type { Metadata } from '../../schema';
 
 // Cast WorkOS metadata to Convex Metadata type
@@ -13,7 +13,7 @@ function toMetadata(workosMetadata: Record<string, string> | undefined): Metadat
   return workosMetadata as Metadata;
 }
 
-export async function handleUserWebhooks(ctx: Context<HttpHonoEnv>) {
+export async function handleUserWebhooks(ctx: Context<WorkosHonoEnv>) {
   const event = ctx.var.workosEvent;
 
   let convexId: Id<'users'>;
@@ -42,9 +42,8 @@ export async function handleUserWebhooks(ctx: Context<HttpHonoEnv>) {
           updatedAt: new Date().getTime(),
         });
 
-        await ctx.env.runAction(internal.organizations.internal.action.createPersonalOrganizationWorkos, {
-          externalId: event.data.id,
-        });
+        // Note: Organization creation is now handled in the onboarding flow
+        // where the user chooses their plan (Personal with trial, Pro, or Enterprise)
         break;
       }
 

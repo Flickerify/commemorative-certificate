@@ -8,6 +8,11 @@
  * @module
  */
 
+import type * as billing_action from "../billing/action.js";
+import type * as billing_internal_mutation from "../billing/internal/mutation.js";
+import type * as billing_query from "../billing/query.js";
+import type * as billing_stripe from "../billing/stripe.js";
+import type * as controllers_stripeWebhooksController from "../controllers/stripeWebhooksController.js";
 import type * as controllers_workosWebhooksController from "../controllers/workosWebhooksController.js";
 import type * as env from "../env.js";
 import type * as functions from "../functions.js";
@@ -20,6 +25,10 @@ import type * as organizations_internal_mutation from "../organizations/internal
 import type * as organizations_internal_query from "../organizations/internal/query.js";
 import type * as organizations_query from "../organizations/query.js";
 import type * as planetscale_internal_action from "../planetscale/internal/action.js";
+import type * as stripe_internal_action from "../stripe/internal/action.js";
+import type * as stripe_webhooks_middleware from "../stripe/webhooks/middleware.js";
+import type * as stripe_webhooks_subscriptions from "../stripe/webhooks/subscriptions.js";
+import type * as sync_mutation from "../sync/mutation.js";
 import type * as sync_query from "../sync/query.js";
 import type * as types_index from "../types/index.js";
 import type * as users_action from "../users/action.js";
@@ -45,6 +54,11 @@ import type {
 import { anyApi, componentsGeneric } from "convex/server";
 
 const fullApi: ApiFromModules<{
+  "billing/action": typeof billing_action;
+  "billing/internal/mutation": typeof billing_internal_mutation;
+  "billing/query": typeof billing_query;
+  "billing/stripe": typeof billing_stripe;
+  "controllers/stripeWebhooksController": typeof controllers_stripeWebhooksController;
   "controllers/workosWebhooksController": typeof controllers_workosWebhooksController;
   env: typeof env;
   functions: typeof functions;
@@ -57,6 +71,10 @@ const fullApi: ApiFromModules<{
   "organizations/internal/query": typeof organizations_internal_query;
   "organizations/query": typeof organizations_query;
   "planetscale/internal/action": typeof planetscale_internal_action;
+  "stripe/internal/action": typeof stripe_internal_action;
+  "stripe/webhooks/middleware": typeof stripe_webhooks_middleware;
+  "stripe/webhooks/subscriptions": typeof stripe_webhooks_subscriptions;
+  "sync/mutation": typeof sync_mutation;
   "sync/query": typeof sync_query;
   "types/index": typeof types_index;
   "users/action": typeof users_action;
