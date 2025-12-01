@@ -7,7 +7,7 @@ import { NavigationSidebar } from './navigation-sidebar';
 import { RightSidebar } from './right-sidebar';
 import { DashboardProvider } from './dashboard-context';
 
-export type SpaceType = 'catalog' | 'compatibility' | 'administration';
+export type SpaceType = 'catalog' | 'compatibility' | 'administration' | 'account';
 
 interface DashboardProps {
   children: ReactNode;
@@ -21,6 +21,7 @@ export default function Dashboard({ children }: DashboardProps) {
 
   // Derive active space from pathname
   const getActiveSpace = (): SpaceType => {
+    if (pathname.startsWith('/account')) return 'account';
     if (pathname.startsWith('/compatibility')) return 'compatibility';
     if (pathname.startsWith('/administration')) return 'administration';
     return 'catalog'; // default to catalog for /catalog/* and root

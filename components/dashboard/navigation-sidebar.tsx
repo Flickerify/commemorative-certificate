@@ -1,7 +1,10 @@
 'use client';
 
 import Link from 'next/link';
-import { usePathname } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
+import { useQuery } from 'convex/react';
+import { useAuth } from '@workos-inc/authkit-nextjs/components';
+import { api } from '@/convex/_generated/api';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
@@ -20,13 +23,17 @@ import {
   CloudUpload,
   Building2,
   UsersIcon,
-  UserCog,
   Shield,
   Key,
   Activity,
   Settings,
   Layers,
   CreditCard,
+  User,
+  Palette,
+  Bell,
+  Lock,
+  Sparkles,
 } from 'lucide-react';
 import type { SpaceType } from './dashboard';
 
@@ -56,12 +63,14 @@ const compatibilityPublishItems = [
   { href: '/compatibility/publish-logs', icon: CloudUpload, label: 'Publish Logs' },
 ];
 
-const adminOrgItems = [
+// Items available to all workspaces
+const adminBaseItems = [
   { href: '/administration/organization', icon: Building2, label: 'Organization' },
-  { href: '/administration/team', icon: UsersIcon, label: 'Team Members' },
-  { href: '/administration/roles', icon: UserCog, label: 'Roles & Permissions' },
   { href: '/administration/billing', icon: CreditCard, label: 'Billing' },
 ];
+
+// Items that require Pro+ (team features)
+const adminTeamItems = [{ href: '/administration/team', icon: UsersIcon, label: 'Team Members' }];
 
 const adminSecurityItems = [
   { href: '/administration/security', icon: Shield, label: 'Security Settings' },
@@ -69,10 +78,17 @@ const adminSecurityItems = [
   { href: '/administration/audit', icon: Activity, label: 'Audit Logs' },
 ];
 
+const accountItems = [
+  { href: '/account/profile', icon: User, label: 'Profile' },
+  { href: '/account/preferences', icon: Palette, label: 'Preferences' },
+  { href: '/account/notifications', icon: Bell, label: 'Notifications' },
+];
+
 const spaceConfig: Record<SpaceType, { title: string; icon: typeof Database }> = {
   catalog: { title: 'Catalog Space', icon: Database },
   compatibility: { title: 'Compatibility', icon: GitBranch },
   administration: { title: 'Administration', icon: Settings },
+  account: { title: 'Account', icon: User },
 };
 
 function NavLink({
@@ -96,7 +112,7 @@ function NavLink({
         'flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors',
         isActive
           ? 'bg-sidebar-accent text-sidebar-accent-foreground font-medium'
-          : 'text-sidebar-foreground hover:bg-sidebar-accent'
+          : 'text-sidebar-foreground hover:bg-sidebar-accent',
       )}
     >
       <Icon className="h-4 w-4" />
@@ -105,15 +121,37 @@ function NavLink({
   );
 }
 
-export function NavigationSidebar({
-  activeSpace,
-  isMobileOpen,
-  onMobileClose,
-  isNavOpen,
-}: NavigationSidebarProps) {
+function LockedNavLink({ icon: Icon, label, onClick }: { icon: typeof Database; label: string; onClick?: () => void }) {
+  return (
+    <button
+      onClick={onClick}
+      className="flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors text-sidebar-muted hover:bg-sidebar-accent/50 w-full text-left group"
+    >
+      <Icon className="h-4 w-4" />
+      <span className="flex-1">{label}</span>
+      <span className="flex items-center gap-1 text-[9px] font-medium px-1.5 py-0.5 rounded bg-blue-100 text-blue-700 dark:bg-blue-500/20 dark:text-blue-400 opacity-80 group-hover:opacity-100">
+        <Lock className="h-2.5 w-2.5" />
+        Pro+
+      </span>
+    </button>
+  );
+}
+
+export function NavigationSidebar({ activeSpace, isMobileOpen, onMobileClose, isNavOpen }: NavigationSidebarProps) {
   const pathname = usePathname();
+  const router = useRouter();
+  const { organizationId } = useAuth();
+
+  // Fetch current organization to check if it's a personal workspace
+  const organization = useQuery(api.organizations.query.getCurrent, organizationId ? { organizationId } : 'skip');
+  const isPersonalWorkspace = organization?.metadata?.tier === 'personal';
 
   const isActive = (href: string) => pathname === href || pathname.startsWith(href + '/');
+
+  const handleUpgradeClick = () => {
+    onMobileClose();
+    router.push('/administration/billing');
+  };
 
   const getNavigationContent = () => {
     switch (activeSpace) {
@@ -149,9 +187,7 @@ export function NavigationSidebar({
             </nav>
 
             <div className="mt-6">
-              <h3 className="px-3 text-xs font-medium text-sidebar-muted uppercase tracking-wider mb-2">
-                Publishing
-              </h3>
+              <h3 className="px-3 text-xs font-medium text-sidebar-muted uppercase tracking-wider mb-2">Publishing</h3>
               <nav className="flex flex-col gap-1">
                 {compatibilityPublishItems.map((item) => (
                   <NavLink
@@ -171,22 +207,63 @@ export function NavigationSidebar({
         return (
           <>
             <nav className="flex flex-col gap-1">
-              {adminOrgItems.map((item) => (
-                <NavLink
-                  key={item.href}
-                  href={item.href}
-                  icon={item.icon}
-                  label={item.label}
-                  isActive={isActive(item.href)}
-                  onClick={onMobileClose}
-                />
-              ))}
+              {/* Organization - always available */}
+              <NavLink
+                href="/administration/organization"
+                icon={Building2}
+                label="Organization"
+                isActive={isActive('/administration/organization')}
+                onClick={onMobileClose}
+              />
+
+              {/* Team items - Pro+ only */}
+              {isPersonalWorkspace ? (
+                <>
+                  {adminTeamItems.map((item) => (
+                    <LockedNavLink key={item.href} icon={item.icon} label={item.label} onClick={handleUpgradeClick} />
+                  ))}
+                </>
+              ) : (
+                <>
+                  {adminTeamItems.map((item) => (
+                    <NavLink
+                      key={item.href}
+                      href={item.href}
+                      icon={item.icon}
+                      label={item.label}
+                      isActive={isActive(item.href)}
+                      onClick={onMobileClose}
+                    />
+                  ))}
+                </>
+              )}
+
+              {/* Billing - always available */}
+              <NavLink
+                href="/administration/billing"
+                icon={CreditCard}
+                label="Billing"
+                isActive={isActive('/administration/billing')}
+                onClick={onMobileClose}
+              />
             </nav>
 
+            {/* Upgrade CTA for personal workspaces */}
+            {isPersonalWorkspace && (
+              <div
+                className="mt-4 p-3 rounded-lg bg-linear-to-r from-primary/5 to-primary/10 cursor-pointer hover:from-primary/10 hover:to-primary/15 transition-colors"
+                onClick={handleUpgradeClick}
+              >
+                <div className="flex items-center gap-2 mb-1">
+                  <Sparkles className="h-4 w-4 text-primary" />
+                  <span className="text-sm font-medium text-sidebar-foreground">Upgrade to Pro</span>
+                </div>
+                <p className="text-xs text-sidebar-muted">Invite team members and unlock collaboration features</p>
+              </div>
+            )}
+
             <div className="mt-6">
-              <h3 className="px-3 text-xs font-medium text-sidebar-muted uppercase tracking-wider mb-2">
-                Security
-              </h3>
+              <h3 className="px-3 text-xs font-medium text-sidebar-muted uppercase tracking-wider mb-2">Security</h3>
               <nav className="flex flex-col gap-1">
                 {adminSecurityItems.map((item) => (
                   <NavLink
@@ -201,6 +278,21 @@ export function NavigationSidebar({
               </nav>
             </div>
           </>
+        );
+      case 'account':
+        return (
+          <nav className="flex flex-col gap-1">
+            {accountItems.map((item) => (
+              <NavLink
+                key={item.href}
+                href={item.href}
+                icon={item.icon}
+                label={item.label}
+                isActive={isActive(item.href)}
+                onClick={onMobileClose}
+              />
+            ))}
+          </nav>
         );
     }
   };
@@ -219,7 +311,7 @@ export function NavigationSidebar({
           isNavOpen
             ? 'md:translate-x-0 md:w-64 md:opacity-100'
             : 'md:translate-x-0 md:w-0 md:opacity-0 md:border-r-0 md:overflow-hidden',
-          'w-64'
+          'w-64',
         )}
       >
         <div className="flex flex-col h-full min-w-64">
@@ -228,7 +320,6 @@ export function NavigationSidebar({
             <div className="flex items-center gap-2 whitespace-nowrap">
               <currentSpace.icon className="h-4 w-4 shrink-0 text-sidebar-muted" />
               <span className="font-semibold text-sidebar-foreground">{currentSpace.title}</span>
-              <ChevronDown className="h-4 w-4 shrink-0 text-sidebar-muted" />
             </div>
             <button
               className="flex h-8 w-8 items-center justify-center rounded-lg md:hidden hover:bg-sidebar-accent shrink-0"
@@ -241,21 +332,29 @@ export function NavigationSidebar({
           {/* Mobile Space Switcher */}
           <div className="md:hidden border-b border-sidebar-border p-3">
             <div className="flex gap-1">
-              {Object.entries(spaceConfig).map(([key, config]) => (
-                <Link
-                  key={key}
-                  href={key === 'catalog' ? '/catalog/sources' : key === 'compatibility' ? '/compatibility/rules' : '/administration/organization'}
-                  onClick={onMobileClose}
-                  className={cn(
-                    'flex-1 flex items-center justify-center gap-1 rounded-lg px-2 py-1.5 text-xs transition-colors',
-                    activeSpace === key
-                      ? 'bg-sidebar-accent text-sidebar-accent-foreground font-medium'
-                      : 'text-sidebar-muted hover:bg-sidebar-accent/50'
-                  )}
-                >
-                  <config.icon className="h-3.5 w-3.5" />
-                </Link>
-              ))}
+              {Object.entries(spaceConfig)
+                .filter(([key]) => key !== 'account') // Account is accessed via user menu
+                .map(([key, config]) => (
+                  <Link
+                    key={key}
+                    href={
+                      key === 'catalog'
+                        ? '/catalog/sources'
+                        : key === 'compatibility'
+                          ? '/compatibility/rules'
+                          : '/administration/organization'
+                    }
+                    onClick={onMobileClose}
+                    className={cn(
+                      'flex-1 flex items-center justify-center gap-1 rounded-lg px-2 py-1.5 text-xs transition-colors',
+                      activeSpace === key
+                        ? 'bg-sidebar-accent text-sidebar-accent-foreground font-medium'
+                        : 'text-sidebar-muted hover:bg-sidebar-accent/50',
+                    )}
+                  >
+                    <config.icon className="h-3.5 w-3.5" />
+                  </Link>
+                ))}
             </div>
           </div>
 

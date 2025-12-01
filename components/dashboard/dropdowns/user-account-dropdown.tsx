@@ -204,7 +204,7 @@ export function UserAccountDropdown({ className }: { className?: string }) {
             className="flex items-center gap-3 px-2 py-2 rounded-md cursor-pointer"
             onClick={() => {
               setIsOpen(false);
-              router.push('/account');
+              router.push('/account/profile');
             }}
           >
             <User className="h-4 w-4 text-muted-foreground" />
@@ -214,17 +214,17 @@ export function UserAccountDropdown({ className }: { className?: string }) {
             className="flex items-center gap-3 px-2 py-2 rounded-md cursor-pointer"
             onClick={() => {
               setIsOpen(false);
-              router.push('/settings');
+              router.push('/account/preferences');
             }}
           >
             <Settings className="h-4 w-4 text-muted-foreground" />
-            <span className="text-sm">Account settings</span>
+            <span className="text-sm">Preferences</span>
           </DropdownMenuItem>
           <DropdownMenuItem
             className="flex items-center gap-3 px-2 py-2 rounded-md cursor-pointer"
             onClick={() => {
               setIsOpen(false);
-              router.push('/account');
+              router.push('/account/notifications');
             }}
           >
             <Bell className="h-4 w-4 text-muted-foreground" />
