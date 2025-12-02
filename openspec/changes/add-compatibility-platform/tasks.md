@@ -44,12 +44,11 @@
 
 ### 1.5 Admin UI Setup
 
-- [ ] 1.5.1 Remove certificate-specific routes (`/certificates`, `/templates`)
-- [ ] 1.5.2 Update sidebar navigation for compatibility platform
-- [ ] 1.5.3 Create `/sources` route placeholder
-- [ ] 1.5.4 Create `/targets` route placeholder
-- [ ] 1.5.5 Create `/rules` route placeholder
-- [ ] 1.5.6 Create `/pages` route placeholder
+- [ ] 1.5.1 Update sidebar navigation for compatibility platform
+- [ ] 1.5.2 Create `/sources` route placeholder
+- [ ] 1.5.3 Create `/targets` route placeholder
+- [ ] 1.5.4 Create `/rules` route placeholder
+- [ ] 1.5.5 Create `/pages` route placeholder
 
 ---
 

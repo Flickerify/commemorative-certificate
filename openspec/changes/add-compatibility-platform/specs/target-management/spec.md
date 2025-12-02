@@ -11,6 +11,7 @@ Management of target schemas, datasets, and rows. Targets represent items to che
 The system SHALL allow organizations to define custom target schemas with typed fields.
 
 #### Scenario: Create target schema
+
 - **GIVEN** a user with write access to an organization
 - **WHEN** the user creates a target definition with:
   ```json
@@ -39,6 +40,7 @@ The system SHALL allow organizations to define custom target schemas with typed 
 - **AND** return the created definition ID
 
 #### Scenario: Target schema validation
+
 - **GIVEN** a target schema definition
 - **WHEN** validation is performed
 - **THEN** the system MUST ensure:
@@ -53,6 +55,7 @@ The system SHALL allow organizations to define custom target schemas with typed 
 The system SHALL support versioned datasets for target definitions.
 
 #### Scenario: Create target dataset
+
 - **GIVEN** a target definition
 - **WHEN** the user creates a dataset with name "Q4 2025 Devices"
 - **THEN** the system MUST create a dataset record with:
@@ -61,6 +64,7 @@ The system SHALL support versioned datasets for target definitions.
   - `createdAt: <timestamp>`
 
 #### Scenario: Target row limit by tier
+
 - **GIVEN** an organization with `planTier: personal` (100 target row limit)
 - **WHEN** the user attempts to import 150 target rows
 - **THEN** the system MUST stop after 100 rows
@@ -73,6 +77,7 @@ The system SHALL support versioned datasets for target definitions.
 The system SHALL support importing target data from CSV and JSON files.
 
 #### Scenario: Import targets from CSV
+
 - **GIVEN** a target dataset in draft status
 - **WHEN** the user uploads a CSV with target data
 - **THEN** the system MUST:
@@ -82,6 +87,7 @@ The system SHALL support importing target data from CSV and JSON files.
   - Insert rows with upsert semantics
 
 #### Scenario: Import targets from JSON
+
 - **GIVEN** a target dataset in draft status
 - **WHEN** the user uploads a JSON array of targets
 - **THEN** the system MUST:
@@ -96,16 +102,19 @@ The system SHALL support importing target data from CSV and JSON files.
 The system SHALL support CRUD operations on target rows.
 
 #### Scenario: List targets with pagination
+
 - **GIVEN** a target dataset with 200 rows
 - **WHEN** the user queries with `limit: 50`
 - **THEN** the system MUST return first 50 targets with total count
 
 #### Scenario: Search targets
+
 - **GIVEN** a target dataset with OBD devices
 - **WHEN** the user searches for "SyncUP"
 - **THEN** the system MUST return targets where name or model contains "SyncUP"
 
 #### Scenario: Update target attributes
+
 - **GIVEN** an existing target row
 - **WHEN** the user updates `price` or `shopUrl`
 - **THEN** the system MUST:
@@ -120,6 +129,7 @@ The system SHALL support CRUD operations on target rows.
 The system SHALL allow configuration of how targets are displayed on public pages.
 
 #### Scenario: Configure display fields
+
 - **GIVEN** a target definition
 - **WHEN** the user configures display settings:
   ```json
@@ -135,10 +145,10 @@ The system SHALL allow configuration of how targets are displayed on public page
 - **THEN** the public page MUST use these settings to render target cards
 
 #### Scenario: Default display configuration
+
 - **GIVEN** a target definition without display configuration
 - **WHEN** targets are displayed
 - **THEN** the system MUST use defaults:
   - Primary field: first string field marked required
   - No image, no link
   - Sort by insertion order
-

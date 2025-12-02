@@ -11,6 +11,7 @@ Public-facing compatibility checker pages with cascading dropdowns, result displ
 The system SHALL allow organizations to configure public compatibility pages.
 
 #### Scenario: Create public page
+
 - **GIVEN** a source dataset and target dataset in `ready` status
 - **WHEN** the user creates a public page:
   ```json
@@ -27,11 +28,13 @@ The system SHALL allow organizations to configure public compatibility pages.
   - Generated `revisionId`
 
 #### Scenario: Page slug uniqueness
+
 - **GIVEN** an organization with a page `slug: vehicle-compatibility`
 - **WHEN** the user creates another page with the same slug
 - **THEN** the system MUST reject with "Page slug already exists"
 
 #### Scenario: Publish page
+
 - **GIVEN** a page in `draft` status with at least one rule
 - **WHEN** the user publishes the page
 - **THEN** the system MUST:
@@ -46,24 +49,28 @@ The system SHALL allow organizations to configure public compatibility pages.
 The system SHALL generate cascading dropdown options from source dimension values.
 
 #### Scenario: Load root dimension options
+
 - **GIVEN** a published page with source dataset
 - **WHEN** the public page loads
 - **THEN** the system MUST return all unique values for the first dimension (e.g., years)
 - **AND** subsequent dropdowns are disabled until selection is made
 
 #### Scenario: Load child dimension options
+
 - **GIVEN** a selection of `year: 2025`
 - **WHEN** the make dropdown is activated
 - **THEN** the system MUST return only makes that exist for year 2025
 - **AND** NOT return makes from other years
 
 #### Scenario: Complete selection
+
 - **GIVEN** all dimensions have been selected
 - **WHEN** the final dropdown value is chosen
 - **THEN** the system MUST automatically trigger compatibility evaluation
 - **AND** display loading state while evaluating
 
 #### Scenario: Reset cascade on change
+
 - **GIVEN** selections: `year: 2025, make: AUDI, model: Q8`
 - **WHEN** the user changes `make` to `BMW`
 - **THEN** the `model` dropdown MUST reset to empty
@@ -76,6 +83,7 @@ The system SHALL generate cascading dropdown options from source dimension value
 The system SHALL display compatibility results in a clear, actionable format.
 
 #### Scenario: Display compatible result
+
 - **GIVEN** a selection verdict of `2` (fully compatible)
 - **AND** a recommended target
 - **WHEN** results are displayed
@@ -85,6 +93,7 @@ The system SHALL display compatibility results in a clear, actionable format.
   - Full compatibility matrix for all targets
 
 #### Scenario: Display partial result
+
 - **GIVEN** a selection verdict of `1` (partial)
 - **WHEN** results are displayed
 - **THEN** the UI MUST show:
@@ -92,6 +101,7 @@ The system SHALL display compatibility results in a clear, actionable format.
   - List of partially compatible targets with feature breakdown
 
 #### Scenario: Display incompatible result
+
 - **GIVEN** a selection verdict of `0` (incompatible)
 - **WHEN** results are displayed
 - **THEN** the UI MUST show:
@@ -99,6 +109,7 @@ The system SHALL display compatibility results in a clear, actionable format.
   - Optional: closest matches or suggestions
 
 #### Scenario: Feature matrix display
+
 - **GIVEN** evaluation results with feature breakdown
 - **WHEN** the matrix is rendered
 - **THEN** the UI MUST show:
@@ -114,6 +125,7 @@ The system SHALL display compatibility results in a clear, actionable format.
 The system SHALL serve public pages at predictable URLs.
 
 #### Scenario: Main domain access (without subdomain)
+
 - **GIVEN** an organization WITHOUT custom subdomain
 - **WHEN** accessing `flickerify.com/{orgSlug}/{pageSlug}`
 - **THEN** the system MUST:
@@ -122,6 +134,7 @@ The system SHALL serve public pages at predictable URLs.
   - Render the public page
 
 #### Scenario: Subdomain access (paid organizations)
+
 - **GIVEN** an organization with `customSubdomain: acme`
 - **WHEN** accessing `acme.flickerify.com/{pageSlug}`
 - **THEN** the system MUST:
@@ -130,6 +143,7 @@ The system SHALL serve public pages at predictable URLs.
   - Render the public page
 
 #### Scenario: Unpublished page access
+
 - **GIVEN** a page with `status: 'draft'`
 - **WHEN** accessed via public URL
 - **THEN** the system MUST return 404 "Page not found"
@@ -141,6 +155,7 @@ The system SHALL serve public pages at predictable URLs.
 The system SHALL allow basic customization of public page appearance.
 
 #### Scenario: Configure page messaging
+
 - **GIVEN** a public page
 - **WHEN** the user configures messages:
   ```json
@@ -153,6 +168,7 @@ The system SHALL allow basic customization of public page appearance.
 - **THEN** the public page MUST use these templates with variable substitution
 
 #### Scenario: Configure dropdown labels
+
 - **GIVEN** a source schema with dimensions `[year, make, model, engine]`
 - **WHEN** the user configures labels:
   ```json
@@ -172,6 +188,7 @@ The system SHALL allow basic customization of public page appearance.
 The system SHALL track basic analytics for public pages.
 
 #### Scenario: Track page view
+
 - **GIVEN** a visitor loads a public page
 - **WHEN** the page renders
 - **THEN** the system MUST record:
@@ -180,6 +197,7 @@ The system SHALL track basic analytics for public pages.
   - Visitor identifier (anonymized)
 
 #### Scenario: Track selection query
+
 - **GIVEN** a visitor completes a selection and views results
 - **WHEN** evaluation completes
 - **THEN** the system MUST record:
@@ -189,6 +207,7 @@ The system SHALL track basic analytics for public pages.
   - Timestamp
 
 #### Scenario: Query analytics
+
 - **GIVEN** recorded analytics data
 - **WHEN** the organization admin views analytics
 - **THEN** the system MUST show:
@@ -204,20 +223,17 @@ The system SHALL track basic analytics for public pages.
 The system SHALL support embedding compatibility checkers on external sites.
 
 #### Scenario: Generate embed code
+
 - **GIVEN** a published page
 - **WHEN** the admin requests embed code
 - **THEN** the system MUST provide:
   ```html
-  <iframe 
-    src="https://flickerify.com/embed/{orgSlug}/{pageSlug}" 
-    width="100%" 
-    height="600"
-    frameborder="0">
-  </iframe>
+  <iframe src="https://flickerify.com/embed/{orgSlug}/{pageSlug}" width="100%" height="600" frameborder="0"> </iframe>
   ```
   OR JavaScript snippet for more control
 
 #### Scenario: Embed API endpoint
+
 - **GIVEN** an embed request to `/api/embed/{pageSlug}`
 - **WHEN** the request includes valid organization context
 - **THEN** the system MUST return:
@@ -226,7 +242,7 @@ The system SHALL support embedding compatibility checkers on external sites.
   - CORS headers allowing external access
 
 #### Scenario: Embed rate limiting
+
 - **GIVEN** an embed endpoint
 - **WHEN** requests exceed rate limit (e.g., 100/minute per page)
 - **THEN** the system MUST return 429 Too Many Requests
-

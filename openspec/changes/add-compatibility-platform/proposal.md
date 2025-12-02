@@ -2,7 +2,7 @@
 
 ## Why
 
-Flickerify is pivoting from a certificate platform to a **multi-tenant compatibility checker SaaS**. The platform allows organizations to create custom compatibility pages where end-users can check if products/items are compatible with their requirements (e.g., "Is this OBD device compatible with my vehicle?").
+Flickerify is a **multi-tenant compatibility checker SaaS**. The platform allows organizations to create custom compatibility pages where end-users can check if products/items are compatible with their requirements (e.g., "Is this OBD device compatible with my vehicle?").
 
 This addresses a gap in the market: while vertical solutions exist (vehicle fitment tools, printer/cartridge finders), there's no horizontal platform that lets any business create schema-driven compatibility checkers with:
 
@@ -46,7 +46,6 @@ This addresses a gap in the market: while vertical solutions exist (vehicle fitm
 
 ### **BREAKING** Changes
 
-- Certificate-related routes and components will be removed
 - Existing `(app)` routes will be repurposed for the compatibility admin dashboard
 - Database schema changes (new tables, modified tables)
 
@@ -69,12 +68,6 @@ This addresses a gap in the market: while vertical solutions exist (vehicle fitm
 - None yet (no existing specs)
 
 ### Affected Code
-
-**Routes to Remove:**
-
-- `app/(app)/certificates/`
-- `app/(app)/templates/`
-- `app/(app)/analytics/` (repurpose for compatibility analytics)
 
 **Routes to Add:**
 
@@ -122,7 +115,6 @@ This addresses a gap in the market: while vertical solutions exist (vehicle fitm
 | Large cartesian computation (sources × targets) | Lazy evaluation + caching; precompute only hot paths |
 | Convex 1MB document limit                       | Shard results into pages; use dictionary encoding    |
 | Complex rule configurations                     | Provide templates; limit rule complexity             |
-| Data migration from certificate platform        | Clean break; no data migration needed                |
 
 ## Timeline
 

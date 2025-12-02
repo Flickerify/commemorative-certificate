@@ -11,6 +11,7 @@ Management of source schemas, datasets, and rows. Sources represent the items be
 The system SHALL allow organizations to define custom source schemas with typed fields.
 
 #### Scenario: Create source schema
+
 - **GIVEN** a user with write access to an organization
 - **WHEN** the user creates a source definition with:
   ```json
@@ -34,6 +35,7 @@ The system SHALL allow organizations to define custom source schemas with typed 
 - **AND** return the created definition ID
 
 #### Scenario: Schema validation errors
+
 - **GIVEN** an invalid schema definition
 - **WHEN** the user attempts to create it
 - **THEN** the system MUST reject with specific validation errors:
@@ -42,6 +44,7 @@ The system SHALL allow organizations to define custom source schemas with typed 
   - "Enum fields must have options array"
 
 #### Scenario: Schema slug uniqueness
+
 - **GIVEN** an organization with a source definition `slug: vehicle-ymme`
 - **WHEN** the user attempts to create another with the same slug
 - **THEN** the system MUST reject with "Source definition slug already exists"
@@ -53,6 +56,7 @@ The system SHALL allow organizations to define custom source schemas with typed 
 The system SHALL support unlimited dimensions stored as JSON, not fixed columns.
 
 #### Scenario: Store dimensions as JSON
+
 - **GIVEN** a source row with dimensions `{year: 2025, make: "AUDI", model: "Q8", engine: "3.0"}`
 - **WHEN** the row is stored
 - **THEN** the `dimsJson` field MUST contain the dimension key-value pairs
@@ -60,6 +64,7 @@ The system SHALL support unlimited dimensions stored as JSON, not fixed columns.
 - **AND** the `keyHash` MUST be SHA-256 of the `keyText`
 
 #### Scenario: Dimension count limit by tier
+
 - **GIVEN** an organization with `planTier: personal`
 - **WHEN** the user creates a schema with 5 dimensions
 - **THEN** the system MUST reject with "Personal plan allows maximum 4 dimensions"
@@ -71,6 +76,7 @@ The system SHALL support unlimited dimensions stored as JSON, not fixed columns.
 The system SHALL support versioned datasets for each source definition.
 
 #### Scenario: Create dataset
+
 - **GIVEN** a source definition
 - **WHEN** the user creates a dataset with name "November 2025 Import"
 - **THEN** the system MUST create a dataset record with:
@@ -80,6 +86,7 @@ The system SHALL support versioned datasets for each source definition.
 - **AND** return the dataset ID
 
 #### Scenario: Dataset status transitions
+
 - **GIVEN** a dataset with `status: 'draft'`
 - **WHEN** import begins
 - **THEN** status MUST transition to `'importing'`
@@ -95,6 +102,7 @@ The system SHALL support versioned datasets for each source definition.
 The system SHALL support importing source data from CSV files.
 
 #### Scenario: CSV upload and preview
+
 - **GIVEN** a dataset in `draft` status
 - **WHEN** the user uploads a CSV file
 - **THEN** the system MUST:
@@ -104,6 +112,7 @@ The system SHALL support importing source data from CSV files.
   - NOT yet insert rows into the dataset
 
 #### Scenario: Column mapping
+
 - **GIVEN** a CSV with columns `["Year", "Make", "Model", "Engine", "FuelAvailable"]`
 - **AND** a schema with fields `["year", "make", "model", "engine", "fuelAvailable"]`
 - **WHEN** the user provides mapping:
@@ -123,6 +132,7 @@ The system SHALL support importing source data from CSV files.
 - **AND** store the mapping configuration
 
 #### Scenario: Import execution
+
 - **GIVEN** a valid mapping configuration
 - **WHEN** the user triggers import
 - **THEN** the system MUST:
@@ -135,6 +145,7 @@ The system SHALL support importing source data from CSV files.
   - Update dataset `rowCount` and `status`
 
 #### Scenario: Import with row limit
+
 - **GIVEN** an organization with `planTier: personal` (1,000 row limit)
 - **AND** a CSV with 1,500 rows
 - **WHEN** import is executed
@@ -148,6 +159,7 @@ The system SHALL support importing source data from CSV files.
 The system SHALL maintain an index of unique dimension values for dropdown generation.
 
 #### Scenario: Extract dimension values on import
+
 - **GIVEN** source rows being imported
 - **WHEN** rows are inserted
 - **THEN** the system MUST extract unique values per dimension level:
@@ -158,6 +170,7 @@ The system SHALL maintain an index of unique dimension values for dropdown gener
 - **AND** store in `sourceDimensionValues` table with `parentKeyHash`
 
 #### Scenario: Query cascading options
+
 - **GIVEN** source dimension values are indexed
 - **WHEN** the user selects `year=2025`
 - **THEN** the query for makes MUST return only makes that exist for year 2025
@@ -171,6 +184,7 @@ The system SHALL maintain an index of unique dimension values for dropdown gener
 The system SHALL support CRUD operations on source rows.
 
 #### Scenario: List rows with pagination
+
 - **GIVEN** a dataset with 5,000 rows
 - **WHEN** the user queries rows with `limit: 100, offset: 0`
 - **THEN** the system MUST return:
@@ -179,11 +193,13 @@ The system SHALL support CRUD operations on source rows.
   - Pagination metadata
 
 #### Scenario: Filter rows by dimensions
+
 - **GIVEN** a dataset with vehicle data
 - **WHEN** the user filters by `{year: 2025, make: "AUDI"}`
 - **THEN** the system MUST return only rows matching those dimension values
 
 #### Scenario: Create single row
+
 - **GIVEN** a dataset in `ready` status
 - **WHEN** the user creates a row with valid data
 - **THEN** the system MUST:
@@ -193,6 +209,7 @@ The system SHALL support CRUD operations on source rows.
   - Update dimension value index
 
 #### Scenario: Delete rows
+
 - **GIVEN** a dataset with rows
 - **WHEN** the user deletes rows by ID or filter
 - **THEN** the system MUST:
@@ -207,6 +224,7 @@ The system SHALL support CRUD operations on source rows.
 The system SHALL provide pre-built schema templates for common use cases.
 
 #### Scenario: List available templates
+
 - **WHEN** the user views the schema creation UI
 - **THEN** the system MUST offer templates:
   - Vehicle YMME (Year/Make/Model/Engine)
@@ -216,10 +234,10 @@ The system SHALL provide pre-built schema templates for common use cases.
   - Generic (customizable)
 
 #### Scenario: Create from template
+
 - **GIVEN** the user selects "Vehicle YMME" template
 - **WHEN** the user confirms creation
 - **THEN** the system MUST create a source definition with:
   - Pre-filled schema with standard fields
   - Dimension hierarchy configured
   - User can modify before saving
-
