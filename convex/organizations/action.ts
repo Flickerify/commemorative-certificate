@@ -143,6 +143,11 @@ export const create = protectedAction({
         payment_settings: {
           save_default_payment_method: 'on_subscription',
         },
+        trial_settings: {
+          end_behavior: {
+            missing_payment_method: 'pause',
+          },
+        },
       });
 
       console.log(
