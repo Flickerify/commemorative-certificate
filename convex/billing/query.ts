@@ -484,3 +484,56 @@ function getFeaturesForTier(tier: 'personal' | 'pro' | 'enterprise'): string[] {
       return personalFeatures;
   }
 }
+
+/**
+ * Check if the current user already has a personal organization with an active trial.
+ * Used to enforce the rule: only ONE personal trial per user.
+ */
+export const hasPersonalTrial = protectedQuery({
+  args: {},
+  returns: v.object({
+    hasExistingTrial: v.boolean(),
+    organizationName: v.optional(v.string()),
+  }),
+  handler: async (ctx) => {
+    // Get all organizations the user is a member of
+    const memberships = await ctx.db
+      .query('organizationMemberships')
+      .withIndex('by_user', (q) => q.eq('userId', ctx.user.externalId))
+      .collect();
+
+    if (memberships.length === 0) {
+      return { hasExistingTrial: false };
+    }
+
+    // Get organization IDs
+    const orgExternalIds = memberships.map((m) => m.organizationId);
+
+    // For each organization, check if it's a personal tier with trialing status
+    for (const orgExternalId of orgExternalIds) {
+      // Get the Convex organization by external ID
+      const organization = await ctx.db
+        .query('organizations')
+        .withIndex('externalId', (q) => q.eq('externalId', orgExternalId))
+        .first();
+
+      if (!organization) continue;
+
+      // Check the subscription
+      const subscription = await ctx.db
+        .query('organizationSubscriptions')
+        .withIndex('by_organization', (q) => q.eq('organizationId', organization._id))
+        .first();
+
+      // If personal tier with active or trialing status, user already has a trial
+      if (subscription && subscription.tier === 'personal' && ['active', 'trialing'].includes(subscription.status)) {
+        return {
+          hasExistingTrial: true,
+          organizationName: organization.name,
+        };
+      }
+    }
+
+    return { hasExistingTrial: false };
+  },
+});

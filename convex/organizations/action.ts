@@ -3,7 +3,7 @@
 import { ConvexError, v } from 'convex/values';
 import { protectedAction } from '../functions';
 import { WorkOS } from '@workos-inc/node';
-import { stripe, isPersonalTierPrice, getTierFromPriceId, TRIAL_PERIOD_DAYS } from '../billing/stripe';
+import { stripe, TRIAL_PERIOD_DAYS } from '../billing/stripe';
 import { api, internal } from '../_generated/api';
 import type { Id } from '../_generated/dataModel';
 
@@ -21,12 +21,13 @@ import type { Id } from '../_generated/dataModel';
  * 5. Store the Stripe customer binding in Convex
  * 6. Add the current user as owner in WorkOS
  * 7. Optimistically insert membership into Convex
- * 8. Create Stripe checkout session for subscription
+ * 8. Create Stripe checkout session for subscription (or trial for personal tier)
  *
  * Note: Tier is NOT stored in WorkOS metadata. It comes from organizationSubscriptions table.
  *
  * @param name - Organization name
- * @param priceId - Stripe price ID to subscribe to (Pro/Enterprise) - REQUIRED
+ * @param priceId - Stripe price ID to subscribe to
+ * @param tier - Subscription tier (personal/pro/enterprise) - used to determine trial eligibility
  * @param successUrl - Redirect URL after successful checkout
  * @param cancelUrl - Redirect URL if checkout cancelled
  */
@@ -34,14 +35,25 @@ export const create = protectedAction({
   args: {
     name: v.string(),
     priceId: v.string(),
+    tier: v.union(v.literal('personal'), v.literal('pro'), v.literal('enterprise')),
     successUrl: v.string(),
     cancelUrl: v.string(),
   },
-  async handler(ctx, { name, priceId, successUrl, cancelUrl }) {
+  async handler(ctx, { name, priceId, tier, successUrl, cancelUrl }) {
     const workos = new WorkOS(process.env.WORKOS_API_KEY);
 
-    // Determine tier from price ID
-    const tier = getTierFromPriceId(priceId);
+    // Check if user already has a personal trial (only one allowed per user)
+    let forceCheckout = false;
+    if (tier === 'personal') {
+      const trialCheck = await ctx.runQuery(api.billing.query.hasPersonalTrial);
+      if (trialCheck.hasExistingTrial) {
+        console.log(
+          `[Organization] User already has personal trial with "${trialCheck.organizationName}". ` +
+            `Requiring payment for additional personal org.`,
+        );
+        forceCheckout = true;
+      }
+    }
 
     // 1. Create organization in WorkOS with tier metadata
     const organization = await workos.organizations.createOrganization({
@@ -112,10 +124,12 @@ export const create = protectedAction({
     console.log(`[Convex] Optimistically inserted membership for user ${ctx.user.externalId}`);
 
     // 8. Handle subscription based on tier
-    const isPersonalTrial = isPersonalTierPrice(priceId);
+    // Personal tier gets a free trial without checkout (unless user already has one)
+    // Pro/Enterprise require immediate checkout
+    const isEligibleForTrial = tier === 'personal' && !forceCheckout;
 
-    if (isPersonalTrial) {
-      // PERSONAL TIER: Create subscription with trial directly (no checkout needed)
+    if (isEligibleForTrial) {
+      // PERSONAL TIER (FIRST ONE): Create subscription with trial directly (no checkout needed)
       // This allows users to start using the app immediately without payment
       const subscription = await stripe.subscriptions.create({
         customer: stripeCustomer.id,
@@ -124,8 +138,8 @@ export const create = protectedAction({
         metadata: {
           workosOrganizationId: organization.id,
         },
-        // Allow subscription without payment method during trial
-        payment_behavior: 'default_incomplete',
+        // Trial subscriptions don't need payment upfront
+        // When trial ends, Stripe will attempt to charge the default payment method
         payment_settings: {
           save_default_payment_method: 'on_subscription',
         },
@@ -148,7 +162,8 @@ export const create = protectedAction({
         checkoutUrl: null, // No checkout needed for trial
       };
     } else {
-      // PRO/ENTERPRISE: Create checkout session for immediate payment
+      // PRO/ENTERPRISE or ADDITIONAL PERSONAL: Create checkout session for payment
+      // (Additional personal orgs don't get free trial - only the first one does)
       const checkout = await stripe.checkout.sessions.create({
         customer: stripeCustomer.id,
         mode: 'subscription',

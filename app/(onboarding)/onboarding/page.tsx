@@ -185,6 +185,7 @@ export default function OnboardingPage() {
       const result = await createOrganization({
         name: orgName.trim(),
         priceId,
+        tier: selectedPlan,
         successUrl: `${window.location.origin}/?onboarding=complete`,
         cancelUrl: `${window.location.origin}/onboarding?step=plan&canceled=true`,
       });
