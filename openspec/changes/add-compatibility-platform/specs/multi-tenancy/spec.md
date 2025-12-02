@@ -10,8 +10,8 @@ The system SHALL treat each WorkOS organization as a tenant with isolated data.
 
 #### Scenario: Data isolation by organization
 
-- **GIVEN** an organization with ID `org_123`
-- **WHEN** any data is created (sources, targets, rules, pages)
+- **GIVEN** an organization with ID `org_123` (e.g., "Acme AI Tools")
+- **WHEN** any data is created (AI client sources, LLM targets, rules, pages)
 - **THEN** the data MUST include `organizationId: org_123`
 - **AND** queries for that data MUST filter by `organizationId`
 

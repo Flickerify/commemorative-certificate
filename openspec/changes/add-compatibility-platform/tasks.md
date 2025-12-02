@@ -14,7 +14,7 @@
 - [ ] 1.1.8 Create `target_rows` table
 - [ ] 1.1.9 Create `feature_rules` table
 - [ ] 1.1.10 Create `overrides` table
-- [ ] 1.1.11 Create `public_pages` table with policy JSON columns
+- [ ] 1.1.11 Create `public_pages` table with policy JSON columns and `template` field
 - [ ] 1.1.12 Create `compat_results` table for result caching
 - [ ] 1.1.13 Create `option_index` table for dropdown shards
 - [ ] 1.1.14 Add `plan_tier`, `custom_subdomain` to `organizations` table
@@ -66,7 +66,7 @@
 
 - [ ] 2.2.1 Create schema builder UI component (field editor)
 - [ ] 2.2.2 Add dimension ordering UI (drag-and-drop)
-- [ ] 2.2.3 Create schema templates selector (Vehicle YMME, Printer, etc.)
+- [ ] 2.2.3 Create schema templates selector (AI Client, Software Application, Hardware Device, Generic)
 - [ ] 2.2.4 Create `/sources` page with definition list
 - [ ] 2.2.5 Create `/sources/new` page with schema builder
 
@@ -125,7 +125,7 @@
 ### 3.2 Target UI
 
 - [ ] 3.2.1 Create `/targets` page with definition list
-- [ ] 3.2.2 Create `/targets/new` page with schema builder
+- [ ] 3.2.2 Create `/targets/new` page with schema builder (LLM Models template)
 - [ ] 3.2.3 Create target import UI (reuse source import components)
 - [ ] 3.2.4 Create target row list UI
 
@@ -147,7 +147,7 @@
 - [ ] 4.2.2 Add required/optional toggle and weight input
 - [ ] 4.2.3 Create rule list with drag-and-drop reordering
 - [ ] 4.2.4 Create rule preview with sample data
-- [ ] 4.2.5 Add rule templates for common patterns
+- [ ] 4.2.5 Add rule templates for common patterns (Streaming Support, Tool Calling, Provider Restriction)
 
 ### 4.3 Policy Configuration
 
@@ -179,11 +179,12 @@
 - [ ] 5.1.2 Create `app/api/pages/[id]/route.ts` (GET, PATCH, DELETE)
 - [ ] 5.1.3 Create `app/api/pages/[id]/publish/route.ts` (POST)
 - [ ] 5.1.4 Implement page revision tracking
+- [ ] 5.1.5 Create `app/api/pages/[id]/matrix/route.ts` (GET matrix data)
 
 ### 5.2 Page Management UI
 
 - [ ] 5.2.1 Create `/pages` admin page with page list
-- [ ] 5.2.2 Create page configuration form (source/target selection)
+- [ ] 5.2.2 Create page configuration form (source/target selection, template choice)
 - [ ] 5.2.3 Create page preview functionality
 - [ ] 5.2.4 Add publish button with confirmation
 
@@ -199,28 +200,38 @@
 - [ ] 5.4.1 Create `pages.query.getBySlug` (page display config)
 - [ ] 5.4.2 Create `pages.query.getOptions` (dropdown options from shards)
 - [ ] 5.4.3 Create `pages.query.getResult` (cached results)
+- [ ] 5.4.4 Create `pages.query.getMatrixData` (matrix grid data)
 
-### 5.5 Dropdown Generation
+### 5.5 Dropdown Generation (Finder Template)
 
 - [ ] 5.5.1 Create `app/api/sources/dimensions/route.ts` for cascading options
 - [ ] 5.5.2 Implement dimension tree builder from `source_dimension_values`
 - [ ] 5.5.3 Create option shard generator for Convex sync
 
-### 5.6 Public Page UI
+### 5.6 Public Page UI - Finder Template
 
 - [ ] 5.6.1 Create `app/[domain]/[pageSlug]/page.tsx` route
 - [ ] 5.6.2 Create cascading dropdown component (reads from Convex)
-- [ ] 5.6.3 Create compatibility result matrix component
-- [ ] 5.6.4 Add feature breakdown table (checkmarks per product)
-- [ ] 5.6.5 Implement recommended product highlighting
+- [ ] 5.6.3 Create compatibility result list component
+- [ ] 5.6.4 Add feature breakdown table (checkmarks per LLM)
+- [ ] 5.6.5 Implement recommended LLM highlighting
 - [ ] 5.6.6 Add verdict messaging (compatible/partial/incompatible)
 
-### 5.7 Subdomain Access
+### 5.7 Public Page UI - Matrix Template
 
-- [ ] 5.7.1 Add subdomain registration UI for paid orgs
-- [ ] 5.7.2 Implement subdomain uniqueness validation
-- [ ] 5.7.3 Update middleware to enforce paid-only subdomains
-- [ ] 5.7.4 Create fallback page for non-existent subdomains
+- [ ] 5.7.1 Create matrix grid component (sources as rows, targets as columns)
+- [ ] 5.7.2 Implement cell rendering with ✅/⚠️/❌ indicators
+- [ ] 5.7.3 Add column grouping by provider (OpenAI, Anthropic, Meta, etc.)
+- [ ] 5.7.4 Implement cell hover tooltips with feature breakdown
+- [ ] 5.7.5 Add cell click detail panel
+- [ ] 5.7.6 Create filter controls (by client type, provider, feature)
+
+### 5.8 Subdomain Access
+
+- [ ] 5.8.1 Add subdomain registration UI for paid orgs
+- [ ] 5.8.2 Implement subdomain uniqueness validation
+- [ ] 5.8.3 Update middleware to enforce paid-only subdomains
+- [ ] 5.8.4 Create fallback page for non-existent subdomains
 
 ---
 
@@ -230,7 +241,8 @@
 
 - [ ] 6.1.1 Track page views in PlanetScale
 - [ ] 6.1.2 Track selection queries (popular combinations)
-- [ ] 6.1.3 Create analytics dashboard in admin UI
+- [ ] 6.1.3 Track matrix cell clicks
+- [ ] 6.1.4 Create analytics dashboard in admin UI
 
 ### 6.2 Export
 
@@ -248,7 +260,7 @@
 
 - [ ] 6.4.1 Update README with platform overview
 - [ ] 6.4.2 Document schema definition format
-- [ ] 6.4.3 Document rule syntax and examples
+- [ ] 6.4.3 Document rule syntax and examples (Streaming, Tool Calling, Provider rules)
 
 ---
 
@@ -272,8 +284,8 @@ Phase 1 ──► Phase 2 ──► Phase 4 ──► Phase 5
 After each phase, verify:
 
 1. **Phase 1**: PlanetScale tables exist; middleware routes `test.localhost:3000` correctly
-2. **Phase 2**: Can create schema via API, import CSV, view rows in UI
-3. **Phase 3**: Can create target schema and import target data
-4. **Phase 4**: Can create rules, evaluate via API, see 0/1/2 verdicts
-5. **Phase 5**: Convex syncs from API; public page shows dropdowns + results
+2. **Phase 2**: Can create AI Client schema via API, import CSV, view rows in UI
+3. **Phase 3**: Can create LLM Models schema and import target data
+4. **Phase 4**: Can create rules (Streaming, Tool Calling), evaluate via API, see 0/1/2 verdicts
+5. **Phase 5**: Convex syncs from API; Finder shows dropdowns + results; Matrix shows grid with ✅/⚠️/❌
 6. **Phase 6**: Analytics populate, exports work, embeds render

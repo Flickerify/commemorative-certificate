@@ -10,27 +10,74 @@ Rule-based compatibility evaluation engine supporting JSONLogic rules, multi-sta
 
 The system SHALL support JSONLogic-based feature rules for compatibility evaluation.
 
-#### Scenario: Create feature rule
+#### Scenario: Create feature rule for streaming support
 
 - **GIVEN** a public page with linked source and target datasets
 - **WHEN** the user creates a feature rule:
   ```json
   {
-    "name": "Battery Voltage Valid",
+    "name": "Streaming Support",
     "required": true,
     "weight": 1,
-    "category": "Sensors",
+    "category": "Core Features",
     "logic": {
-      "and": [
-        { "var": "source.batteryAvailable" },
-        { ">=": [{ "var": "source.batteryVoltage" }, 0] },
-        { "<=": [{ "var": "source.batteryVoltage" }, 15] }
+      "or": [
+        { "==": [{ "var": "source.needsStreaming" }, false] },
+        {
+          "and": [
+            { "==": [{ "var": "source.needsStreaming" }, true] },
+            { "==": [{ "var": "target.supportsStreaming" }, true] }
+          ]
+        }
       ]
     }
   }
   ```
 - **THEN** the system MUST validate the JSONLogic syntax
 - **AND** store the rule with `pageId` and `organizationId` scope
+
+#### Scenario: Create feature rule for tool calling
+
+- **GIVEN** a public page with linked source and target datasets
+- **WHEN** the user creates a feature rule:
+  ```json
+  {
+    "name": "Tool Calling Support",
+    "required": false,
+    "weight": 2,
+    "category": "Advanced Features",
+    "logic": {
+      "or": [
+        { "==": [{ "var": "source.needsToolCalling" }, false] },
+        {
+          "and": [
+            { "==": [{ "var": "source.needsToolCalling" }, true] },
+            { "==": [{ "var": "target.supportsToolCalling" }, true] }
+          ]
+        }
+      ]
+    }
+  }
+  ```
+- **THEN** the system MUST validate the JSONLogic syntax
+- **AND** store the rule with `pageId` and `organizationId` scope
+
+#### Scenario: Create provider-specific rule
+
+- **GIVEN** a source client that requires OpenAI models only
+- **WHEN** the user creates a feature rule:
+  ```json
+  {
+    "name": "OpenAI Provider Required",
+    "required": true,
+    "weight": 1,
+    "category": "Provider",
+    "logic": {
+      "==": [{ "var": "target.provider" }, "openai"]
+    }
+  }
+  ```
+- **THEN** only targets with `provider: "openai"` will pass this rule
 
 #### Scenario: Rule validation
 
@@ -56,24 +103,24 @@ The system SHALL evaluate feature rules against source-target pairs.
 
 #### Scenario: Evaluate single rule
 
-- **GIVEN** a feature rule with JSONLogic `{"var": "source.fuelAvailable"}`
-- **AND** a source row with `{fuelAvailable: true}`
-- **AND** a target row
+- **GIVEN** a feature rule with JSONLogic `{"var": "source.needsStreaming"}`
+- **AND** a source row with `{needsStreaming: true}`
+- **AND** a target row with `{supportsStreaming: true}`
 - **WHEN** the rule is evaluated with context `{source, target}`
 - **THEN** the result MUST be `true`
 
 #### Scenario: Evaluate all rules for a pair
 
 - **GIVEN** multiple feature rules for a page
-- **AND** a source-target pair
+- **AND** a source-target pair (e.g., t3.chat ↔ GPT-4.1)
 - **WHEN** all rules are evaluated
 - **THEN** the system MUST return a map: `{ruleId: boolean, ...}`
 - **AND** track which rules passed/failed
 
 #### Scenario: Rule evaluation with missing data
 
-- **GIVEN** a rule referencing `source.optionalField`
-- **AND** a source row where `optionalField` is undefined
+- **GIVEN** a rule referencing `source.maxLatencyMs`
+- **AND** a source row where `maxLatencyMs` is undefined
 - **WHEN** the rule is evaluated
 - **THEN** the JSONLogic `var` MUST return `null`
 - **AND** comparison operations with `null` follow JSONLogic semantics
@@ -100,8 +147,8 @@ The system SHALL support configurable device policies for per-target verdict cal
 #### Scenario: Verdict calculation - required failure
 
 - **GIVEN** a device policy with `requiredMode: ANY_REQUIRED_FAIL_IS_0`
-- **AND** 5 rules where 2 are `required: true`
-- **WHEN** one required rule fails
+- **AND** 5 rules where 2 are `required: true` (Streaming Support, Tool Calling)
+- **WHEN** the Streaming Support rule fails for an LLM
 - **THEN** the device verdict MUST be `0` (incompatible)
 - **AND** the reason MUST be `"required-fail"`
 
@@ -157,10 +204,10 @@ The system SHALL support configurable selection policies for aggregate verdicts 
 #### Scenario: Selection verdict - any full
 
 - **GIVEN** a selection policy with `mode: ANY_DEVICE_FULL_IS_COMPATIBLE`
-- **AND** device verdicts: `[0, 0, 2, 1]` (one full compatible)
+- **AND** device verdicts: `[0, 0, 2, 1]` (GPT-4.1 is fully compatible)
 - **WHEN** selection verdict is calculated
 - **THEN** the selection verdict MUST be `2` (compatible)
-- **AND** the recommended device MUST be the one with verdict `2`
+- **AND** the recommended LLM MUST be the one with verdict `2`
 
 #### Scenario: Selection verdict - any partial
 
@@ -171,17 +218,17 @@ The system SHALL support configurable selection policies for aggregate verdicts 
 
 #### Scenario: Selection verdict - none compatible
 
-- **GIVEN** device verdicts: `[0, 0, 0, 0]` (all incompatible)
+- **GIVEN** device verdicts: `[0, 0, 0, 0]` (all LLMs incompatible)
 - **WHEN** selection verdict is calculated
 - **THEN** the selection verdict MUST be `0`
 - **AND** no recommendation is made
 
 #### Scenario: Recommendation tie-breaker
 
-- **GIVEN** multiple devices with verdict `2`
+- **GIVEN** multiple LLMs with verdict `2`
 - **AND** recommendation strategy `HIGHEST_VERDICT_THEN_SCORE`
 - **WHEN** recommendation is calculated
-- **THEN** the device with highest `score` among verdict `2` devices is recommended
+- **THEN** the LLM with highest `score` among verdict `2` targets is recommended
 
 ---
 
@@ -191,22 +238,22 @@ The system SHALL support manual compatibility overrides that take precedence ove
 
 #### Scenario: Create override
 
-- **GIVEN** a source row with `keyHash: abc123`
-- **AND** a target row with `keyHash: def456`
+- **GIVEN** a source row with `keyHash: abc123` (t3.chat)
+- **AND** a target row with `keyHash: def456` (llama-3.3-70b)
 - **WHEN** the user creates an override:
   ```json
   {
     "sourceKeyHash": "abc123",
     "targetKeyHash": "def456",
     "value": true,
-    "note": "Verified by testing team"
+    "note": "Verified by testing team - works with Groq provider"
   }
   ```
 - **THEN** the system MUST store the override
 
 #### Scenario: Override precedence
 
-- **GIVEN** an override setting compatibility to `true` for a source-target pair
+- **GIVEN** an override setting compatibility to `true` for t3.chat ↔ llama-3.3-70b
 - **AND** rules that would result in verdict `0`
 - **WHEN** compatibility is evaluated
 - **THEN** the override MUST take precedence
@@ -229,11 +276,11 @@ The system SHALL provide a Next.js API route to evaluate compatibility for a sel
 #### Scenario: Evaluate compatibility
 
 - **GIVEN** a public page with source/target datasets and rules
-- **AND** a selection `{year: 2025, make: "AUDI", model: "Q8", engine: "3.0"}`
+- **AND** a selection `{clientType: "web", id: "t3-chat"}`
 - **WHEN** `POST /api/pages/[id]/evaluate` is called
 - **THEN** the system MUST:
   1. Find source row matching the selection
-  2. Load all target rows
+  2. Load all target rows (LLM models)
   3. Load rules and policies
   4. Check overrides first
   5. Evaluate rules for each non-overridden pair
@@ -247,18 +294,20 @@ The system SHALL provide a Next.js API route to evaluate compatibility for a sel
 - **THEN** the result MUST include:
   ```json
   {
-    "selectionKey": "year=2025|make=AUDI|model=Q8|engine=3.0",
+    "selectionKey": "clientType=web|id=t3-chat",
     "selectionVerdict": 2,
-    "recommendedTargetId": "target_123",
+    "recommendedTargetId": "gpt-4.1",
     "targets": [
-      { "id": "target_123", "verdict": 2, "score": 0.95 },
-      { "id": "target_456", "verdict": 1, "score": 0.6 }
+      { "id": "gpt-4.1", "displayName": "GPT-4.1", "provider": "openai", "verdict": 2, "score": 1.0 },
+      { "id": "claude-3.7-sonnet", "displayName": "Claude 3.7 Sonnet", "provider": "anthropic", "verdict": 2, "score": 1.0 },
+      { "id": "llama-3.3-70b", "displayName": "Llama 3.3 70B", "provider": "meta", "verdict": 1, "score": 0.6 }
     ],
     "features": [
-      { "name": "Battery", "target_123": true, "target_456": true },
-      { "name": "Fuel", "target_123": true, "target_456": false }
+      { "name": "Streaming Support", "gpt-4.1": true, "claude-3.7-sonnet": true, "llama-3.3-70b": true },
+      { "name": "Tool Calling", "gpt-4.1": true, "claude-3.7-sonnet": true, "llama-3.3-70b": false },
+      { "name": "Structured Outputs", "gpt-4.1": true, "claude-3.7-sonnet": true, "llama-3.3-70b": false }
     ],
-    "evaluatedAt": "2025-11-30T12:00:00Z"
+    "evaluatedAt": "2025-12-02T12:00:00Z"
   }
   ```
 
@@ -303,7 +352,7 @@ The system SHALL cache compatibility results in PlanetScale and sync to Convex f
 
 #### Scenario: Result pagination
 
-- **GIVEN** a page with 500 targets
+- **GIVEN** a page with 500 target LLMs
 - **AND** Convex 1MB document limit
 - **WHEN** results are synced to Convex
 - **THEN** results MUST be split into pages of ~100 targets each

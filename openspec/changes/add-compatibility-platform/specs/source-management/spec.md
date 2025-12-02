@@ -1,6 +1,6 @@
 # Capability: Source Management
 
-Management of source schemas, datasets, and rows. Sources represent the items being checked for compatibility (e.g., vehicles, printers, cameras).
+Management of source schemas, datasets, and rows. Sources represent the items being checked for compatibility (e.g., AI clients, websites, software applications).
 
 **Storage**: All source data is stored in PlanetScale (system of record). Convex only caches dropdown options for frontend display.
 
@@ -16,16 +16,25 @@ The system SHALL allow organizations to define custom source schemas with typed 
 - **WHEN** the user creates a source definition with:
   ```json
   {
-    "slug": "vehicle-ymme",
-    "name": "Vehicle (Year/Make/Model/Engine)",
+    "slug": "ai-clients",
+    "name": "AI Clients (Type/Platform)",
     "schema": {
-      "dimensions": ["year", "make", "model", "engine"],
+      "dimensions": ["clientType"],
       "fields": [
-        { "name": "year", "type": "number", "required": true, "role": "dimension" },
-        { "name": "make", "type": "string", "required": true, "role": "dimension" },
-        { "name": "model", "type": "string", "required": true, "role": "dimension" },
-        { "name": "engine", "type": "string", "required": true, "role": "dimension" },
-        { "name": "fuelAvailable", "type": "boolean", "required": false, "role": "attribute" }
+        { "name": "id", "type": "string", "required": true, "role": "identifier" },
+        { "name": "name", "type": "string", "required": true, "role": "display" },
+        {
+          "name": "clientType",
+          "type": "enum",
+          "required": true,
+          "role": "dimension",
+          "options": ["web", "desktop", "mobile", "backend"]
+        },
+        { "name": "needsStreaming", "type": "boolean", "required": false, "role": "attribute" },
+        { "name": "needsToolCalling", "type": "boolean", "required": false, "role": "attribute" },
+        { "name": "needsStructuredOutputs", "type": "boolean", "required": false, "role": "attribute" },
+        { "name": "region", "type": "string", "required": false, "role": "attribute" },
+        { "name": "maxLatencyMs", "type": "number", "required": false, "role": "attribute" }
       ]
     }
   }
@@ -39,13 +48,13 @@ The system SHALL allow organizations to define custom source schemas with typed 
 - **GIVEN** an invalid schema definition
 - **WHEN** the user attempts to create it
 - **THEN** the system MUST reject with specific validation errors:
-  - "Dimension 'year' must have a corresponding field"
+  - "Dimension 'clientType' must have a corresponding field"
   - "Field type must be one of: string, number, boolean, enum"
   - "Enum fields must have options array"
 
 #### Scenario: Schema slug uniqueness
 
-- **GIVEN** an organization with a source definition `slug: vehicle-ymme`
+- **GIVEN** an organization with a source definition `slug: ai-clients`
 - **WHEN** the user attempts to create another with the same slug
 - **THEN** the system MUST reject with "Source definition slug already exists"
 
@@ -57,10 +66,11 @@ The system SHALL support unlimited dimensions stored as JSON, not fixed columns.
 
 #### Scenario: Store dimensions as JSON
 
-- **GIVEN** a source row with dimensions `{year: 2025, make: "AUDI", model: "Q8", engine: "3.0"}`
+- **GIVEN** a source row with dimensions `{clientType: "web"}`
+- **AND** attributes `{id: "t3-chat", name: "t3.chat", needsStreaming: true, needsToolCalling: false}`
 - **WHEN** the row is stored
 - **THEN** the `dimsJson` field MUST contain the dimension key-value pairs
-- **AND** the `keyText` MUST be `year=2025|make=AUDI|model=Q8|engine=3.0`
+- **AND** the `keyText` MUST be `clientType=web|id=t3-chat`
 - **AND** the `keyHash` MUST be SHA-256 of the `keyText`
 
 #### Scenario: Dimension count limit by tier
@@ -78,7 +88,7 @@ The system SHALL support versioned datasets for each source definition.
 #### Scenario: Create dataset
 
 - **GIVEN** a source definition
-- **WHEN** the user creates a dataset with name "November 2025 Import"
+- **WHEN** the user creates a dataset with name "December 2025 Clients"
 - **THEN** the system MUST create a dataset record with:
   - `status: 'draft'`
   - `rowCount: 0`
@@ -113,19 +123,22 @@ The system SHALL support importing source data from CSV files.
 
 #### Scenario: Column mapping
 
-- **GIVEN** a CSV with columns `["Year", "Make", "Model", "Engine", "FuelAvailable"]`
-- **AND** a schema with fields `["year", "make", "model", "engine", "fuelAvailable"]`
+- **GIVEN** a CSV with columns `["ID", "Name", "ClientType", "NeedsStreaming", "Region"]`
+- **AND** a schema with fields `["id", "name", "clientType", "needsStreaming", "region"]`
 - **WHEN** the user provides mapping:
   ```json
   {
     "columns": {
-      "Year": "year",
-      "Make": "make",
-      "Model": "model",
-      "Engine": "engine",
-      "FuelAvailable": "fuelAvailable"
+      "ID": "id",
+      "Name": "name",
+      "ClientType": "clientType",
+      "NeedsStreaming": "needsStreaming",
+      "Region": "region"
     },
-    "defaults": {}
+    "defaults": {
+      "needsToolCalling": false,
+      "needsStructuredOutputs": false
+    }
   }
   ```
 - **THEN** the system MUST validate all required fields are mapped
@@ -163,19 +176,15 @@ The system SHALL maintain an index of unique dimension values for dropdown gener
 - **GIVEN** source rows being imported
 - **WHEN** rows are inserted
 - **THEN** the system MUST extract unique values per dimension level:
-  - Level 0 (year): all unique years
-  - Level 1 (make): unique makes per year
-  - Level 2 (model): unique models per year+make
-  - etc.
+  - Level 0 (clientType): all unique client types (web, desktop, mobile, backend)
 - **AND** store in `sourceDimensionValues` table with `parentKeyHash`
 
 #### Scenario: Query cascading options
 
 - **GIVEN** source dimension values are indexed
-- **WHEN** the user selects `year=2025`
-- **THEN** the query for makes MUST return only makes that exist for year 2025
-- **WHEN** the user selects `year=2025, make=AUDI`
-- **THEN** the query for models MUST return only models for that year+make
+- **WHEN** the user selects `clientType=web`
+- **THEN** the query for sources MUST return only web clients
+- **AND** the filter dropdown options are generated from the dimension index
 
 ---
 
@@ -194,14 +203,26 @@ The system SHALL support CRUD operations on source rows.
 
 #### Scenario: Filter rows by dimensions
 
-- **GIVEN** a dataset with vehicle data
-- **WHEN** the user filters by `{year: 2025, make: "AUDI"}`
-- **THEN** the system MUST return only rows matching those dimension values
+- **GIVEN** a dataset with AI client data
+- **WHEN** the user filters by `{clientType: "web", needsStreaming: true}`
+- **THEN** the system MUST return only rows matching those dimension/attribute values
 
 #### Scenario: Create single row
 
 - **GIVEN** a dataset in `ready` status
-- **WHEN** the user creates a row with valid data
+- **WHEN** the user creates a row with valid data:
+  ```json
+  {
+    "id": "t3-chat",
+    "name": "t3.chat",
+    "clientType": "web",
+    "needsStreaming": true,
+    "needsToolCalling": false,
+    "needsStructuredOutputs": false,
+    "region": "global",
+    "maxLatencyMs": 3000
+  }
+  ```
 - **THEN** the system MUST:
   - Validate against schema
   - Generate `keyText` and `keyHash`
@@ -227,17 +248,16 @@ The system SHALL provide pre-built schema templates for common use cases.
 
 - **WHEN** the user views the schema creation UI
 - **THEN** the system MUST offer templates:
-  - Vehicle YMME (Year/Make/Model/Engine)
-  - Printer (Brand/Series/Model)
-  - Camera Body (Brand/Mount/Sensor)
-  - Software (Platform/OS/Version)
+  - AI Client (Type/Platform/Features)
+  - Software Application (Platform/OS/Version)
+  - Hardware Device (Brand/Model/Generation)
   - Generic (customizable)
 
 #### Scenario: Create from template
 
-- **GIVEN** the user selects "Vehicle YMME" template
+- **GIVEN** the user selects "AI Client" template
 - **WHEN** the user confirms creation
 - **THEN** the system MUST create a source definition with:
-  - Pre-filled schema with standard fields
+  - Pre-filled schema with standard fields (id, name, clientType, needsStreaming, needsToolCalling, etc.)
   - Dimension hierarchy configured
   - User can modify before saving

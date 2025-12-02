@@ -1,6 +1,6 @@
 # Capability: Target Management
 
-Management of target schemas, datasets, and rows. Targets represent items to check compatibility against (e.g., OBD devices, cartridges, lenses).
+Management of target schemas, datasets, and rows. Targets represent items to check compatibility against (e.g., LLM models, API providers, AI services).
 
 **Storage**: All target data is stored in PlanetScale (system of record). Convex only caches display metadata for frontend.
 
@@ -16,21 +16,21 @@ The system SHALL allow organizations to define custom target schemas with typed 
 - **WHEN** the user creates a target definition with:
   ```json
   {
-    "slug": "obd-devices",
-    "name": "OBD Devices",
+    "slug": "llm-models",
+    "name": "LLM Models",
     "schema": {
       "fields": [
         { "name": "id", "type": "string", "required": true },
-        { "name": "name", "type": "string", "required": true },
-        { "name": "manufacturer", "type": "string", "required": true },
-        { "name": "model", "type": "string", "required": true },
-        { "name": "firmware", "type": "string", "required": false },
-        { "name": "supportsFuel", "type": "boolean", "required": false },
-        { "name": "supportsBattery", "type": "boolean", "required": false },
-        { "name": "supportsOdometer", "type": "boolean", "required": false },
-        { "name": "price", "type": "number", "required": false },
-        { "name": "shopUrl", "type": "string", "required": false },
-        { "name": "imageUrl", "type": "string", "required": false }
+        { "name": "displayName", "type": "string", "required": true },
+        { "name": "provider", "type": "string", "required": true },
+        { "name": "supportsStreaming", "type": "boolean", "required": true },
+        { "name": "supportsToolCalling", "type": "boolean", "required": true },
+        { "name": "supportsStructuredOutputs", "type": "boolean", "required": false },
+        { "name": "primaryRegion", "type": "string", "required": false },
+        { "name": "maxTokens", "type": "number", "required": false },
+        { "name": "costPer1kTokens", "type": "number", "required": false },
+        { "name": "docsUrl", "type": "string", "required": false },
+        { "name": "logoUrl", "type": "string", "required": false }
       ]
     }
   }
@@ -57,7 +57,7 @@ The system SHALL support versioned datasets for target definitions.
 #### Scenario: Create target dataset
 
 - **GIVEN** a target definition
-- **WHEN** the user creates a dataset with name "Q4 2025 Devices"
+- **WHEN** the user creates a dataset with name "Q4 2025 LLM Models"
 - **THEN** the system MUST create a dataset record with:
   - `status: 'draft'`
   - `rowCount: 0`
@@ -89,7 +89,31 @@ The system SHALL support importing target data from CSV and JSON files.
 #### Scenario: Import targets from JSON
 
 - **GIVEN** a target dataset in draft status
-- **WHEN** the user uploads a JSON array of targets
+- **WHEN** the user uploads a JSON array of targets:
+  ```json
+  [
+    {
+      "id": "gpt-4.1",
+      "displayName": "GPT-4.1",
+      "provider": "openai",
+      "supportsStreaming": true,
+      "supportsToolCalling": true,
+      "supportsStructuredOutputs": true,
+      "primaryRegion": "global",
+      "maxTokens": 128000
+    },
+    {
+      "id": "claude-3.7-sonnet",
+      "displayName": "Claude 3.7 Sonnet",
+      "provider": "anthropic",
+      "supportsStreaming": true,
+      "supportsToolCalling": true,
+      "supportsStructuredOutputs": true,
+      "primaryRegion": "global",
+      "maxTokens": 200000
+    }
+  ]
+  ```
 - **THEN** the system MUST:
   - Validate each object against the schema
   - Insert rows with generated `keyText` and `keyHash`
@@ -109,14 +133,20 @@ The system SHALL support CRUD operations on target rows.
 
 #### Scenario: Search targets
 
-- **GIVEN** a target dataset with OBD devices
-- **WHEN** the user searches for "SyncUP"
-- **THEN** the system MUST return targets where name or model contains "SyncUP"
+- **GIVEN** a target dataset with LLM models
+- **WHEN** the user searches for "claude"
+- **THEN** the system MUST return targets where displayName or provider contains "claude"
+
+#### Scenario: Filter by provider
+
+- **GIVEN** a target dataset with LLM models from multiple providers
+- **WHEN** the user filters by `{provider: "openai"}`
+- **THEN** the system MUST return only OpenAI models
 
 #### Scenario: Update target attributes
 
 - **GIVEN** an existing target row
-- **WHEN** the user updates `price` or `shopUrl`
+- **WHEN** the user updates `costPer1kTokens` or `docsUrl`
 - **THEN** the system MUST:
   - Validate the update against schema
   - Update the row
@@ -134,15 +164,16 @@ The system SHALL allow configuration of how targets are displayed on public page
 - **WHEN** the user configures display settings:
   ```json
   {
-    "primaryField": "name",
-    "secondaryField": "manufacturer",
-    "imageField": "imageUrl",
-    "linkField": "shopUrl",
-    "sortField": "price",
-    "sortOrder": "asc"
+    "primaryField": "displayName",
+    "secondaryField": "provider",
+    "imageField": "logoUrl",
+    "linkField": "docsUrl",
+    "sortField": "displayName",
+    "sortOrder": "asc",
+    "groupByField": "provider"
   }
   ```
-- **THEN** the public page MUST use these settings to render target cards
+- **THEN** the public page MUST use these settings to render target cards/columns
 
 #### Scenario: Default display configuration
 

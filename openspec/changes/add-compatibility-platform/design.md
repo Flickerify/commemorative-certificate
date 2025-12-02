@@ -2,7 +2,9 @@
 
 ## Context
 
-Flickerify is pivoting to a multi-tenant compatibility checker platform. Organizations create schemas for "sources" (what's being checked, e.g., vehicles) and "targets" (what to check against, e.g., OBD devices), define compatibility rules, and publish public-facing pages where end-users can check compatibility.
+Flickerify is pivoting to a multi-tenant compatibility checker platform. Organizations create schemas for "sources" (what's being checked, e.g., AI clients/websites) and "targets" (what to check against, e.g., LLM models), define compatibility rules, and publish public-facing pages where end-users can check compatibility.
+
+**MVP Domain**: Website/Software ↔ LLM compatibility. Users check which LLM models are compatible with their AI-powered applications.
 
 ### Stakeholders
 
@@ -29,6 +31,7 @@ Flickerify is pivoting to a multi-tenant compatibility checker platform. Organiz
 - Usage limits for personal/free organizations
 - **PlanetScale as source of truth for all business data**
 - **Convex as optimized read layer for UI**
+- **Matrix template for grid-based compatibility visualization**
 
 ### Non-Goals
 
@@ -177,6 +180,7 @@ pageDisplays
 ├── slug
 ├── name
 ├── status
+├── template ("finder" | "matrix")
 ├── dimensions: { name, label }[]
 ├── messaging: { headline2, headline1, headline0 }
 └── syncedAt
@@ -192,6 +196,7 @@ users, organizations, organizationMemberships, syncStatus
 pages.query.getBySlug; // Get page display config
 pages.query.getOptions; // Get dropdown options (from shards)
 pages.query.getResult; // Get cached result (or trigger compute)
+pages.query.getMatrixData; // Get matrix grid data
 
 // Internal mutations (called by API routes after PlanetScale write)
 internal.pages.mutation.syncPageDisplay;
@@ -228,6 +233,41 @@ middleware.ts
 - No database migrations when tenants create new schemas
 - Supports unlimited dimensions
 - Can validate at runtime with Zod
+
+**Example Source Schema** (AI Client):
+
+```json
+{
+  "dimensions": ["clientType"],
+  "fields": [
+    { "name": "id", "type": "string", "required": true },
+    { "name": "name", "type": "string", "required": true },
+    { "name": "clientType", "type": "enum", "required": true, "options": ["web", "desktop", "mobile", "backend"] },
+    { "name": "needsStreaming", "type": "boolean", "required": false },
+    { "name": "needsToolCalling", "type": "boolean", "required": false },
+    { "name": "needsStructuredOutputs", "type": "boolean", "required": false },
+    { "name": "region", "type": "string", "required": false },
+    { "name": "maxLatencyMs", "type": "number", "required": false }
+  ]
+}
+```
+
+**Example Target Schema** (LLM Model):
+
+```json
+{
+  "fields": [
+    { "name": "id", "type": "string", "required": true },
+    { "name": "displayName", "type": "string", "required": true },
+    { "name": "provider", "type": "string", "required": true },
+    { "name": "supportsStreaming", "type": "boolean", "required": true },
+    { "name": "supportsToolCalling", "type": "boolean", "required": true },
+    { "name": "supportsStructuredOutputs", "type": "boolean", "required": false },
+    { "name": "primaryRegion", "type": "string", "required": false },
+    { "name": "maxTokens", "type": "number", "required": false }
+  ]
+}
+```
 
 **PlanetScale Schema**:
 
@@ -282,6 +322,54 @@ CREATE TABLE source_dimension_values (
 
 **What**: Use [json-logic-js](https://jsonlogic.com/) for feature rules, stored in PlanetScale.
 
+**Example Rules for LLM Compatibility**:
+
+```json
+// Streaming Support (required)
+{
+  "name": "Streaming Support",
+  "required": true,
+  "logic": {
+    "or": [
+      { "==": [{ "var": "source.needsStreaming" }, false] },
+      {
+        "and": [
+          { "==": [{ "var": "source.needsStreaming" }, true] },
+          { "==": [{ "var": "target.supportsStreaming" }, true] }
+        ]
+      }
+    ]
+  }
+}
+
+// Tool Calling Support (optional, weighted)
+{
+  "name": "Tool Calling Support",
+  "required": false,
+  "weight": 2,
+  "logic": {
+    "or": [
+      { "==": [{ "var": "source.needsToolCalling" }, false] },
+      {
+        "and": [
+          { "==": [{ "var": "source.needsToolCalling" }, true] },
+          { "==": [{ "var": "target.supportsToolCalling" }, true] }
+        ]
+      }
+    ]
+  }
+}
+
+// Provider Restriction
+{
+  "name": "OpenAI Provider Required",
+  "required": true,
+  "logic": {
+    "==": [{ "var": "target.provider" }, "openai"]
+  }
+}
+```
+
 **PlanetScale Table**:
 
 ```sql
@@ -330,7 +418,35 @@ ALTER TABLE public_pages ADD COLUMN selection_policy_json JSON;
 - Check limits in API routes before write
 - Store `plan_tier` on organizations (synced from WorkOS or managed locally)
 
-### Decision 11: Sync Strategy (PlanetScale → Convex)
+### Decision 11: Page Templates
+
+**What**: Support multiple visualization templates for public pages.
+
+**Templates**:
+
+| Template | Use Case                     | UI Pattern                 |
+| -------- | ---------------------------- | -------------------------- |
+| Finder   | Single source → many targets | Cascading dropdowns → list |
+| Matrix   | Many sources × many targets  | Grid with ✅/⚠️/❌ cells   |
+
+**Matrix Template Layout**:
+
+```
+| Client / LLM | OpenAI        | Anthropic      | Meta           |
+|              | GPT-4.1 | mini | Claude 3.7 | ... | Llama 3.3 | ... |
+|--------------|---------|------|------------|-----|-----------|-----|
+| t3.chat      | ✅      | ✅   | ✅         | ... | ⚠️        | ... |
+| MyApp        | ✅      | ✅   | ❌         | ... | ❌        | ... |
+| Customer X   | ✅      | ✅   | ✅         | ... | ❌        | ... |
+```
+
+**Implementation**:
+
+- Store `template` field on `public_pages`
+- Matrix template groups columns by `target.provider`
+- Cell tooltips show feature breakdown
+
+### Decision 12: Sync Strategy (PlanetScale → Convex)
 
 **What**: After writes to PlanetScale, sync relevant visualization data to Convex.
 
@@ -348,7 +464,7 @@ await syncToConvex({
   type: 'page-display',
   organizationId,
   pageId,
-  data: { name, slug, dimensions, messaging },
+  data: { name, slug, template, dimensions, messaging },
 });
 
 // Uses existing Convex internal mutations
@@ -382,7 +498,7 @@ feature_rules (id, organization_id, page_id, name, required, weight, logic_json,
 overrides (id, organization_id, page_id, source_key_hash, target_key_hash, value, note, ...)
 
 -- Public Pages
-public_pages (id, organization_id, slug, name, source_dataset_id, target_dataset_id,
+public_pages (id, organization_id, slug, name, template, source_dataset_id, target_dataset_id,
               device_policy_json, selection_policy_json, status, revision_id, ...)
 
 -- Cached Results (can be in PlanetScale for persistence, synced to Convex)
@@ -419,6 +535,7 @@ organizationDomains, syncStatus
 | `/api/pages`                        | GET, POST          | List/create pages          |
 | `/api/pages/[id]/publish`           | POST               | Publish page               |
 | `/api/pages/[id]/evaluate`          | POST               | Compute compatibility      |
+| `/api/pages/[id]/matrix`            | GET                | Get matrix data            |
 
 ### Convex Functions (Read for UI)
 
@@ -427,6 +544,7 @@ organizationDomains, syncStatus
 | `pages.query.getBySlug`                   | Query    | Page display config    |
 | `pages.query.getOptions`                  | Query    | Dropdown option shards |
 | `pages.query.getResult`                   | Query    | Cached result pages    |
+| `pages.query.getMatrixData`               | Query    | Matrix grid data       |
 | `internal.pages.mutation.syncPageDisplay` | Internal | Sync from API route    |
 | `internal.pages.mutation.syncOptions`     | Internal | Sync dropdown shards   |
 | `internal.pages.mutation.syncResult`      | Internal | Sync result cache      |
@@ -455,7 +573,7 @@ organizationDomains, syncStatus
 
 1. Implement page management API routes
 2. Build sync to Convex (option shards, results)
-3. Build public page UI (reads from Convex)
+3. Build public page UI (Finder + Matrix templates)
 4. Implement subdomain routing
 
 ### Rollback
