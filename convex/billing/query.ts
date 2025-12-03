@@ -1,6 +1,62 @@
 import { v } from 'convex/values';
-import { internalQuery as baseInternalQuery } from '../_generated/server';
+import { internalQuery as baseInternalQuery, DatabaseReader } from '../_generated/server';
 import { protectedQuery, internalQuery } from '../functions';
+import { Id, Doc } from '../_generated/dataModel';
+
+/**
+ * Helper to find active subscription using the by_organization_and_status index.
+ * Runs two indexed queries (active, trialing) which is more efficient than
+ * collecting all subscriptions and filtering in memory.
+ */
+async function findActiveSubscription(
+  db: DatabaseReader,
+  organizationId: Id<'organizations'>,
+): Promise<Doc<'organizationSubscriptions'> | null> {
+  // Check for 'active' status first (most common)
+  const activeSubscription = await db
+    .query('organizationSubscriptions')
+    .withIndex('by_organization_and_status', (q) => q.eq('organizationId', organizationId).eq('status', 'active'))
+    .first();
+
+  if (activeSubscription) return activeSubscription;
+
+  // Check for 'trialing' status
+  const trialingSubscription = await db
+    .query('organizationSubscriptions')
+    .withIndex('by_organization_and_status', (q) => q.eq('organizationId', organizationId).eq('status', 'trialing'))
+    .first();
+
+  return trialingSubscription;
+}
+
+/**
+ * Helper to get the most recent subscription (for fallback when no active).
+ */
+async function getMostRecentSubscription(
+  db: DatabaseReader,
+  organizationId: Id<'organizations'>,
+): Promise<Doc<'organizationSubscriptions'> | null> {
+  const subscriptions = await db
+    .query('organizationSubscriptions')
+    .withIndex('by_organization', (q) => q.eq('organizationId', organizationId))
+    .collect();
+
+  if (subscriptions.length === 0) return null;
+
+  return subscriptions.sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0))[0];
+}
+
+/**
+ * Helper to count total subscriptions for an organization.
+ */
+async function countSubscriptions(db: DatabaseReader, organizationId: Id<'organizations'>): Promise<number> {
+  const subscriptions = await db
+    .query('organizationSubscriptions')
+    .withIndex('by_organization', (q) => q.eq('organizationId', organizationId))
+    .collect();
+
+  return subscriptions.length;
+}
 
 /**
  * Get subscription with pending checkout info.
@@ -138,13 +194,68 @@ export const getOrganizationSubscription = protectedQuery({
     }),
   ),
   handler: async (ctx, args) => {
-    const subscription = await ctx.db
+    // First, try to find an active subscription using the indexed query (most efficient)
+    const activeSubscription = await findActiveSubscription(ctx.db, args.organizationId);
+
+    if (activeSubscription) {
+      const isTrialing = activeSubscription.status === 'trialing';
+
+      // Calculate trial days remaining
+      let trialDaysRemaining: number | undefined;
+      if (isTrialing && activeSubscription.trialEnd) {
+        const now = Date.now();
+        const msRemaining = activeSubscription.trialEnd - now;
+        trialDaysRemaining = Math.max(0, Math.ceil(msRemaining / (1000 * 60 * 60 * 24)));
+      }
+
+      return {
+        isPersonalWorkspace: false as const,
+        isPendingSetup: false as const,
+        tier: activeSubscription.tier as 'personal' | 'pro' | 'enterprise',
+        status: activeSubscription.status,
+        billingInterval: activeSubscription.billingInterval,
+        currentPeriodStart: activeSubscription.currentPeriodStart,
+        currentPeriodEnd: activeSubscription.currentPeriodEnd,
+        cancelAtPeriodEnd: activeSubscription.cancelAtPeriodEnd,
+        cancelAt: activeSubscription.cancelAt,
+        trialStart: activeSubscription.trialStart,
+        trialEnd: activeSubscription.trialEnd,
+        isTrialing,
+        trialDaysRemaining,
+        seatLimit: activeSubscription.seatLimit,
+        paymentMethodBrand: activeSubscription.paymentMethodBrand,
+        paymentMethodLast4: activeSubscription.paymentMethodLast4,
+        features: getFeaturesForTier(activeSubscription.tier),
+        hasActiveSubscription: true as const,
+      };
+    }
+
+    // No active subscription - check for pending setup using indexed query
+    const pendingSubscription = await ctx.db
       .query('organizationSubscriptions')
-      .withIndex('by_organization', (q) => q.eq('organizationId', args.organizationId))
+      .withIndex('by_organization_and_status', (q) => q.eq('organizationId', args.organizationId).eq('status', 'none'))
       .first();
 
-    // No subscription = personal workspace (legacy, should not happen with new signup flow)
-    if (!subscription) {
+    if (pendingSubscription?.pendingCheckoutSessionId) {
+      return {
+        isPersonalWorkspace: false as const,
+        isPendingSetup: true as const,
+        pendingCheckoutSessionId: pendingSubscription.pendingCheckoutSessionId,
+        tier: 'personal' as const,
+        status: 'none' as const,
+        cancelAtPeriodEnd: false as const,
+        seatLimit: 1 as const,
+        features: getFeaturesForTier('personal'),
+        hasActiveSubscription: false as const,
+        isTrialing: false as const,
+      };
+    }
+
+    // No active or pending - get most recent subscription (for canceled history)
+    const mostRecentSubscription = await getMostRecentSubscription(ctx.db, args.organizationId);
+
+    // No subscriptions at all = personal workspace (legacy)
+    if (!mostRecentSubscription) {
       return {
         isPersonalWorkspace: true as const,
         isPendingSetup: false as const,
@@ -158,55 +269,72 @@ export const getOrganizationSubscription = protectedQuery({
       };
     }
 
-    // Check if this is a pending setup (has pending checkout and status is 'none')
-    const isPendingSetup = subscription.status === 'none' && subscription.pendingCheckoutSessionId !== undefined;
-
-    if (isPendingSetup) {
-      return {
-        isPersonalWorkspace: false as const,
-        isPendingSetup: true as const,
-        pendingCheckoutSessionId: subscription.pendingCheckoutSessionId,
-        tier: 'personal' as const,
-        status: 'none' as const,
-        cancelAtPeriodEnd: false as const,
-        seatLimit: 1 as const,
-        features: getFeaturesForTier('personal'),
-        hasActiveSubscription: false as const,
-        isTrialing: false as const,
-      };
-    }
-
-    const hasActiveSubscription = subscription.status === 'active' || subscription.status === 'trialing';
-    const isTrialing = subscription.status === 'trialing';
-
-    // Calculate trial days remaining
-    let trialDaysRemaining: number | undefined;
-    if (isTrialing && subscription.trialEnd) {
-      const now = Date.now();
-      const msRemaining = subscription.trialEnd - now;
-      trialDaysRemaining = Math.max(0, Math.ceil(msRemaining / (1000 * 60 * 60 * 24)));
-    }
-
+    // Return most recent (likely canceled) subscription info
     return {
       isPersonalWorkspace: false as const,
       isPendingSetup: false as const,
-      tier: subscription.tier as 'personal' | 'pro' | 'enterprise',
-      status: subscription.status,
-      billingInterval: subscription.billingInterval,
-      currentPeriodStart: subscription.currentPeriodStart,
-      currentPeriodEnd: subscription.currentPeriodEnd,
-      cancelAtPeriodEnd: subscription.cancelAtPeriodEnd,
-      cancelAt: subscription.cancelAt, // Scheduled cancellation timestamp
-      trialStart: subscription.trialStart,
-      trialEnd: subscription.trialEnd,
-      isTrialing,
-      trialDaysRemaining,
-      seatLimit: subscription.seatLimit,
-      paymentMethodBrand: subscription.paymentMethodBrand,
-      paymentMethodLast4: subscription.paymentMethodLast4,
-      features: getFeaturesForTier(subscription.tier),
-      hasActiveSubscription,
+      tier: mostRecentSubscription.tier as 'personal' | 'pro' | 'enterprise',
+      status: mostRecentSubscription.status,
+      billingInterval: mostRecentSubscription.billingInterval,
+      currentPeriodStart: mostRecentSubscription.currentPeriodStart,
+      currentPeriodEnd: mostRecentSubscription.currentPeriodEnd,
+      cancelAtPeriodEnd: mostRecentSubscription.cancelAtPeriodEnd,
+      cancelAt: mostRecentSubscription.cancelAt,
+      trialStart: mostRecentSubscription.trialStart,
+      trialEnd: mostRecentSubscription.trialEnd,
+      isTrialing: false,
+      seatLimit: mostRecentSubscription.seatLimit,
+      paymentMethodBrand: mostRecentSubscription.paymentMethodBrand,
+      paymentMethodLast4: mostRecentSubscription.paymentMethodLast4,
+      features: getFeaturesForTier(mostRecentSubscription.tier),
+      hasActiveSubscription: false as const,
     };
+  },
+});
+
+/**
+ * Get all subscriptions for an organization (for history).
+ */
+export const getAllOrganizationSubscriptions = protectedQuery({
+  args: {
+    organizationId: v.id('organizations'),
+  },
+  returns: v.array(
+    v.object({
+      _id: v.id('organizationSubscriptions'),
+      stripeSubscriptionId: v.optional(v.string()),
+      tier: v.string(),
+      status: v.string(),
+      billingInterval: v.optional(v.union(v.literal('month'), v.literal('year'))),
+      currentPeriodStart: v.optional(v.number()),
+      currentPeriodEnd: v.optional(v.number()),
+      cancelAtPeriodEnd: v.boolean(),
+      cancelAt: v.optional(v.number()),
+      createdAt: v.number(),
+      updatedAt: v.number(),
+    }),
+  ),
+  handler: async (ctx, args) => {
+    const subscriptions = await ctx.db
+      .query('organizationSubscriptions')
+      .withIndex('by_organization', (q) => q.eq('organizationId', args.organizationId))
+      .collect();
+
+    return subscriptions
+      .sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0))
+      .map((sub) => ({
+        _id: sub._id,
+        stripeSubscriptionId: sub.stripeSubscriptionId,
+        tier: sub.tier,
+        status: sub.status,
+        billingInterval: sub.billingInterval,
+        currentPeriodStart: sub.currentPeriodStart,
+        currentPeriodEnd: sub.currentPeriodEnd,
+        cancelAtPeriodEnd: sub.cancelAtPeriodEnd,
+        cancelAt: sub.cancelAt,
+        createdAt: sub.createdAt,
+        updatedAt: sub.updatedAt,
+      }));
   },
 });
 
@@ -252,11 +380,16 @@ export const getSeatInfo = protectedQuery({
 
     const currentSeats = memberships.length;
 
-    // Get subscription tier
-    const subscription = await ctx.db
+    // Get all subscriptions and find the active one (or most recent)
+    const allSubscriptions = await ctx.db
       .query('organizationSubscriptions')
       .withIndex('by_organization', (q) => q.eq('organizationId', args.organizationId))
-      .first();
+      .collect();
+
+    // Prioritize active/trialing subscriptions
+    const activeSubscription = allSubscriptions.find((sub) => sub.status === 'active' || sub.status === 'trialing');
+    const subscription =
+      activeSubscription || allSubscriptions.sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0))[0];
 
     // No subscription = personal workspace
     const isPersonalWorkspace = !subscription;
@@ -292,12 +425,9 @@ export const hasFeature = protectedQuery({
   },
   returns: v.boolean(),
   handler: async (ctx, args) => {
-    const subscription = await ctx.db
-      .query('organizationSubscriptions')
-      .withIndex('by_organization', (q) => q.eq('organizationId', args.organizationId))
-      .first();
-
-    const tier = subscription?.tier ?? 'personal';
+    // Use indexed query to find active subscription
+    const activeSubscription = await findActiveSubscription(ctx.db, args.organizationId);
+    const tier = activeSubscription?.tier ?? 'personal';
     const features = getFeaturesForTier(tier);
 
     return features.includes(args.feature);
@@ -321,78 +451,93 @@ export const canDeleteOrganization = protectedQuery({
     cancelAtPeriodEnd: v.boolean(),
     currentPeriodEnd: v.optional(v.number()),
     isPendingSetup: v.boolean(),
+    totalSubscriptions: v.number(),
+    activeSubscriptions: v.number(),
   }),
   handler: async (ctx, args) => {
-    const subscription = await ctx.db
-      .query('organizationSubscriptions')
-      .withIndex('by_organization', (q) => q.eq('organizationId', args.organizationId))
-      .first();
+    // First, efficiently check for active subscription using indexed query
+    const activeSubscription = await findActiveSubscription(ctx.db, args.organizationId);
 
-    // No subscription = personal workspace (can delete)
-    if (!subscription) {
+    if (activeSubscription) {
+      // Has active subscription - cannot delete
+      const totalSubscriptions = await countSubscriptions(ctx.db, args.organizationId);
+
+      if (activeSubscription.cancelAtPeriodEnd) {
+        return {
+          canDelete: false,
+          reason: `Subscription is set to cancel on ${new Date(activeSubscription.currentPeriodEnd!).toLocaleDateString()}. You can delete the organization after this date.`,
+          hasActiveSubscription: true,
+          cancelAtPeriodEnd: true,
+          currentPeriodEnd: activeSubscription.currentPeriodEnd,
+          isPendingSetup: false,
+          totalSubscriptions,
+          activeSubscriptions: 1,
+        };
+      }
+
       return {
-        canDelete: true,
-        hasActiveSubscription: false,
+        canDelete: false,
+        reason: 'You must cancel your subscription before deleting this organization.',
+        hasActiveSubscription: true,
         cancelAtPeriodEnd: false,
+        currentPeriodEnd: activeSubscription.currentPeriodEnd,
         isPendingSetup: false,
+        totalSubscriptions,
+        activeSubscriptions: 1,
       };
     }
 
-    // Check if this is a pending setup (checkout never completed)
-    const isPendingSetup = subscription.status === 'none' && subscription.pendingCheckoutSessionId !== undefined;
-    if (isPendingSetup) {
+    // No active subscription - check for pending setup using indexed query
+    const pendingSubscription = await ctx.db
+      .query('organizationSubscriptions')
+      .withIndex('by_organization_and_status', (q) => q.eq('organizationId', args.organizationId).eq('status', 'none'))
+      .first();
+
+    if (pendingSubscription?.pendingCheckoutSessionId) {
+      const totalSubscriptions = await countSubscriptions(ctx.db, args.organizationId);
       return {
         canDelete: true,
         reason: 'Organization setup was not completed. You can safely delete it.',
         hasActiveSubscription: false,
         cancelAtPeriodEnd: false,
         isPendingSetup: true,
+        totalSubscriptions,
+        activeSubscriptions: 0,
       };
     }
 
-    const hasActiveSubscription = subscription.status === 'active' || subscription.status === 'trialing';
-    const cancelAtPeriodEnd = subscription.cancelAtPeriodEnd;
+    // No active or pending - count total and get most recent for details
+    const totalSubscriptions = await countSubscriptions(ctx.db, args.organizationId);
 
-    // Can delete if:
-    // 1. No active subscription
-    // 2. Subscription is canceled (not just cancelAtPeriodEnd)
-    // 3. Subscription is set to cancel at period end (we allow deletion after period ends)
-    if (!hasActiveSubscription) {
+    // No subscriptions = can delete
+    if (totalSubscriptions === 0) {
       return {
         canDelete: true,
         hasActiveSubscription: false,
-        cancelAtPeriodEnd,
-        currentPeriodEnd: subscription.currentPeriodEnd,
+        cancelAtPeriodEnd: false,
         isPendingSetup: false,
+        totalSubscriptions: 0,
+        activeSubscriptions: 0,
       };
     }
 
-    // Has active subscription - check if it's set to cancel
-    if (cancelAtPeriodEnd) {
-      return {
-        canDelete: false,
-        reason: `Subscription is set to cancel on ${new Date(subscription.currentPeriodEnd!).toLocaleDateString()}. You can delete the organization after this date, or wait for the subscription to end.`,
-        hasActiveSubscription: true,
-        cancelAtPeriodEnd: true,
-        currentPeriodEnd: subscription.currentPeriodEnd,
-        isPendingSetup: false,
-      };
-    }
-
-    // Active subscription without cancellation
+    // Has subscriptions but none active = can delete (all canceled)
+    const mostRecent = await getMostRecentSubscription(ctx.db, args.organizationId);
     return {
-      canDelete: false,
-      reason: 'You must cancel your subscription before deleting this organization.',
-      hasActiveSubscription: true,
-      cancelAtPeriodEnd: false,
-      currentPeriodEnd: subscription.currentPeriodEnd,
+      canDelete: true,
+      hasActiveSubscription: false,
+      cancelAtPeriodEnd: mostRecent?.cancelAtPeriodEnd || false,
+      currentPeriodEnd: mostRecent?.currentPeriodEnd,
       isPendingSetup: false,
+      totalSubscriptions,
+      activeSubscriptions: 0,
     };
   },
 });
 
 /**
  * Internal version for use in actions.
+ * Uses indexed queries for efficient lookup.
  */
 export const canDeleteOrganizationInternal = baseInternalQuery({
   args: {
@@ -402,47 +547,34 @@ export const canDeleteOrganizationInternal = baseInternalQuery({
     canDelete: v.boolean(),
     reason: v.optional(v.string()),
     hasActiveSubscription: v.boolean(),
+    totalSubscriptions: v.number(),
+    activeSubscriptions: v.number(),
   }),
   handler: async (ctx, args) => {
-    const subscription = await ctx.db
-      .query('organizationSubscriptions')
-      .withIndex('by_organization', (q) => q.eq('organizationId', args.organizationId))
-      .first();
+    // Efficiently check for active subscription using indexed query
+    const activeSubscription = await findActiveSubscription(ctx.db, args.organizationId);
 
-    // No subscription = can delete
-    if (!subscription) {
+    if (activeSubscription) {
+      const totalSubscriptions = await countSubscriptions(ctx.db, args.organizationId);
       return {
-        canDelete: true,
-        hasActiveSubscription: false,
+        canDelete: false,
+        reason: activeSubscription.cancelAtPeriodEnd
+          ? `Subscription cancels on ${new Date(activeSubscription.currentPeriodEnd!).toLocaleDateString()}`
+          : 'Active subscription must be canceled first',
+        hasActiveSubscription: true,
+        totalSubscriptions,
+        activeSubscriptions: 1,
       };
     }
 
-    // Pending setup (checkout never completed) = can delete
-    const isPendingSetup = subscription.status === 'none' && subscription.pendingCheckoutSessionId !== undefined;
-    if (isPendingSetup) {
-      return {
-        canDelete: true,
-        hasActiveSubscription: false,
-      };
-    }
+    // No active subscription - count total
+    const totalSubscriptions = await countSubscriptions(ctx.db, args.organizationId);
 
-    const hasActiveSubscription = subscription.status === 'active' || subscription.status === 'trialing';
-
-    // Can delete if no active subscription or subscription is fully canceled
-    if (!hasActiveSubscription || subscription.status === 'canceled') {
-      return {
-        canDelete: true,
-        hasActiveSubscription: false,
-      };
-    }
-
-    // Active subscription - cannot delete
     return {
-      canDelete: false,
-      reason: subscription.cancelAtPeriodEnd
-        ? `Subscription cancels on ${new Date(subscription.currentPeriodEnd!).toLocaleDateString()}`
-        : 'Active subscription must be canceled first',
-      hasActiveSubscription: true,
+      canDelete: true,
+      hasActiveSubscription: false,
+      totalSubscriptions,
+      activeSubscriptions: 0,
     };
   },
 });

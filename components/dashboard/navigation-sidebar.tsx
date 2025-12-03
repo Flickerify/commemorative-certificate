@@ -142,9 +142,11 @@ export function NavigationSidebar({ activeSpace, isMobileOpen, onMobileClose, is
   const router = useRouter();
   const { organizationId } = useAuth();
 
-  // Fetch current organization to check if it's a personal workspace
+  // Fetch current organization (includes subscriptionTier from source of truth)
   const organization = useQuery(api.organizations.query.getCurrent, organizationId ? { organizationId } : 'skip');
-  const isPersonalWorkspace = organization?.metadata?.tier === 'personal';
+
+  // Check if personal workspace based on subscription tier (source of truth)
+  const isPersonalWorkspace = organization?.subscriptionTier === 'personal';
 
   const isActive = (href: string) => pathname === href || pathname.startsWith(href + '/');
 

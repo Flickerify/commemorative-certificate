@@ -32,7 +32,7 @@ interface SubscriptionCardProps {
 const tierConfig = {
   personal: {
     name: 'Personal',
-    description: '14-day free trial',
+    description: 'For individuals',
     icon: IconUser,
     color: 'bg-emerald-500',
     badgeVariant: 'secondary' as const,
@@ -224,6 +224,50 @@ export function SubscriptionCard({ organizationId }: SubscriptionCardProps) {
           <BillingPortalButton organizationId={organizationId} variant="outline" className="w-full">
             Manage Subscription
           </BillingPortalButton>
+        ) : subscription.status === 'paused' ? (
+          // Trial ended without payment method - direct to portal to add card
+          <div className="flex flex-col gap-4 w-full">
+            <div className="flex items-start gap-3">
+              <div className="rounded-full bg-red-500/20 p-2">
+                <IconAlertTriangle className="h-4 w-4 text-red-600 dark:text-red-400" />
+              </div>
+              <div className="flex-1 space-y-1">
+                <p className="font-medium text-red-700 dark:text-red-300">Your trial has ended</p>
+                <p className="text-sm text-red-600/80 dark:text-red-400/80">
+                  Add a payment method to reactivate your subscription and continue using the service.
+                </p>
+              </div>
+            </div>
+            <BillingPortalButton
+              organizationId={organizationId}
+              variant="default"
+              className="w-full bg-red-600 hover:bg-red-700"
+            >
+              <IconCreditCard className="mr-2 h-4 w-4" />
+              Add Payment Method
+            </BillingPortalButton>
+          </div>
+        ) : subscription.status === 'past_due' || subscription.status === 'unpaid' ? (
+          // Payment failed
+          <div className="flex flex-col gap-2 w-full">
+            <BillingPortalButton organizationId={organizationId} variant="default" className="w-full">
+              <IconRefresh className="mr-2 h-4 w-4" />
+              Update Payment Method
+            </BillingPortalButton>
+            <p className="text-xs text-muted-foreground text-center">
+              Your payment failed. Please update your payment method to continue.
+            </p>
+          </div>
+        ) : subscription.status === 'canceled' || subscription.cancelAtPeriodEnd ? (
+          <div className="flex flex-col gap-2 w-full">
+            <BillingPortalButton organizationId={organizationId} variant="default" className="w-full">
+              <IconRefresh className="mr-2 h-4 w-4" />
+              Manage Billing
+            </BillingPortalButton>
+            <p className="text-xs text-muted-foreground text-center">
+              Create a new subscription in the billing portal to reactivate your account
+            </p>
+          </div>
         ) : (
           <p className="text-sm text-muted-foreground text-center w-full">
             Upgrade to Pro or Enterprise to unlock more features

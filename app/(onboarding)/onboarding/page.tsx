@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAction, useQuery } from 'convex/react';
 import { useAuth } from '@workos-inc/authkit-nextjs/components';
@@ -118,14 +118,22 @@ export default function OnboardingPage() {
   const [error, setError] = useState<string | null>(null);
 
   // Redirect if already onboarded
-  if (user?.metadata?.onboardingComplete === 'true') {
-    router.replace('/');
-    return null;
-  }
+  useEffect(() => {
+    if (user?.metadata?.onboardingComplete === 'true') {
+      router.replace('/');
+    }
+  }, [user?.metadata?.onboardingComplete, router]);
 
   // Set default org name when user data loads
-  if (user && !orgName) {
-    setOrgName(`${user.firstName || 'My'}'s Workspace`);
+  useEffect(() => {
+    if (user && !orgName) {
+      setOrgName(`${user.firstName || 'My'}'s Workspace`);
+    }
+  }, [user, orgName]);
+
+  // Show nothing while redirecting
+  if (user?.metadata?.onboardingComplete === 'true') {
+    return null;
   }
 
   const handleNext = () => {

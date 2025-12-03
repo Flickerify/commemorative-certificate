@@ -12,17 +12,25 @@ import { BillingPortalButton } from '@/components/billing/billing-portal-button'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import {
   IconCreditCard,
   IconReceipt,
-  IconSparkles,
   IconCheck,
   IconAlertCircle,
   IconBuilding,
   IconUsers,
   IconX,
+  IconDownload,
+  IconExternalLink,
+  IconFileInvoice,
+  IconRefresh,
   IconClock,
+  IconPlayerPlay,
+  IconPlayerPause,
+  IconArrowUp,
+  IconArrowDown,
 } from '@tabler/icons-react';
 import type { Id } from '@/convex/_generated/dataModel';
 
@@ -31,7 +39,8 @@ export default function BillingPage() {
   const { organizationId } = useAuth();
   const [showSuccess, setShowSuccess] = useState(false);
   const [showCanceled, setShowCanceled] = useState(false);
-  const [activeTab, setActiveTab] = useState('overview');
+  const [activeTab, setActiveTab] = useState('subscription');
+  const [isLoadingHistory, setIsLoadingHistory] = useState(false);
 
   // Get the organization from Convex using the WorkOS organizationId
   const organizations = useQuery(api.organizations.query.getOrganizationsByUserId);
@@ -48,8 +57,24 @@ export default function BillingPage() {
     currentOrg?._id ? { organizationId: currentOrg._id as Id<'organizations'> } : 'skip',
   );
 
-  // Sync after successful checkout
+  // Actions
   const syncAfterCheckout = useAction(api.billing.action.syncAfterCheckout);
+  const getBillingHistory = useAction(api.billing.action.getBillingHistory);
+
+  // State for billing history
+  const [billingHistory, setBillingHistory] = useState<
+    Array<{
+      id: string;
+      type: string;
+      description: string;
+      amount?: number;
+      currency?: string;
+      status: string;
+      created: number;
+      invoiceUrl?: string;
+      invoicePdf?: string;
+    }>
+  >([]);
 
   // Check for success/canceled params and sync
   useEffect(() => {
@@ -72,6 +97,25 @@ export default function BillingPage() {
       return () => clearTimeout(timeout);
     }
   }, [searchParams, currentOrg?._id, syncAfterCheckout]);
+
+  // Load billing history when tab changes
+  useEffect(() => {
+    if (activeTab === 'history' && currentOrg?._id && billingHistory.length === 0) {
+      setIsLoadingHistory(true);
+      getBillingHistory({ organizationId: currentOrg._id as Id<'organizations'>, limit: 30 })
+        .then(setBillingHistory)
+        .finally(() => setIsLoadingHistory(false));
+    }
+  }, [activeTab, currentOrg?._id, getBillingHistory, billingHistory.length]);
+
+  const refreshHistory = () => {
+    if (currentOrg?._id) {
+      setIsLoadingHistory(true);
+      getBillingHistory({ organizationId: currentOrg._id as Id<'organizations'>, limit: 30 })
+        .then(setBillingHistory)
+        .finally(() => setIsLoadingHistory(false));
+    }
+  };
 
   const isLoading = organizations === undefined || (currentOrg && subscription === undefined);
   const isPersonalWorkspace = subscription?.isPersonalWorkspace ?? false;
@@ -133,23 +177,23 @@ export default function BillingPage() {
         ) : currentOrg && !isPersonalWorkspace ? (
           <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
             <TabsList className="grid w-full max-w-md grid-cols-3">
-              <TabsTrigger value="overview" className="gap-2">
+              <TabsTrigger value="subscription" className="gap-2">
                 <IconCreditCard className="h-4 w-4" />
-                Overview
-              </TabsTrigger>
-              <TabsTrigger value="plans" className="gap-2">
-                <IconSparkles className="h-4 w-4" />
-                Plans
+                Subscription
               </TabsTrigger>
               <TabsTrigger value="usage" className="gap-2">
                 <IconUsers className="h-4 w-4" />
                 Usage
               </TabsTrigger>
+              <TabsTrigger value="history" className="gap-2">
+                <IconReceipt className="h-4 w-4" />
+                History
+              </TabsTrigger>
             </TabsList>
 
-            {/* Overview Tab */}
-            <TabsContent value="overview" className="space-y-6">
-              {/* Current Subscription */}
+            {/* Subscription Tab (Merged Overview + Plans) */}
+            <TabsContent value="subscription" className="space-y-8">
+              {/* Current Subscription & Stats */}
               <div className="grid gap-6 md:grid-cols-2">
                 <SubscriptionCard organizationId={currentOrg._id as Id<'organizations'>} />
 
@@ -197,33 +241,49 @@ export default function BillingPage() {
                       )}
                     </div>
                   )}
-
-                  {/* Upgrade CTA for non-enterprise */}
-                  {subscription && !subscription.isPersonalWorkspace && subscription.tier !== 'enterprise' && (
-                    <div className="pt-4 border-t">
-                      <button
-                        onClick={() => setActiveTab('plans')}
-                        className="w-full inline-flex items-center justify-center gap-2 rounded-md border border-input bg-background px-4 py-2 text-sm font-medium transition-colors hover:bg-accent hover:text-accent-foreground"
-                      >
-                        <IconSparkles className="h-4 w-4" />
-                        View All Plans
-                      </button>
-                    </div>
-                  )}
                 </div>
               </div>
-            </TabsContent>
 
-            {/* Plans Tab */}
-            <TabsContent value="plans" className="space-y-6">
-              <PricingTable
-                organizationId={currentOrg._id as Id<'organizations'>}
-                currentTier={
-                  subscription && !subscription.isPersonalWorkspace && subscription.tier !== 'personal'
-                    ? (subscription.tier as 'pro' | 'enterprise' | 'personal')
-                    : 'personal'
-                }
-              />
+              {/* Plans Section */}
+              <div className="space-y-4">
+                <div className="flex items-center justify-between">
+                  <h3 className="text-lg font-semibold">Available Plans</h3>
+                  {subscription && !subscription.isPersonalWorkspace && subscription.hasActiveSubscription && (
+                    <p className="text-sm text-muted-foreground">
+                      {subscription.tier === 'enterprise' ? 'You have the highest plan' : 'Upgrade or change your plan'}
+                    </p>
+                  )}
+                </div>
+                <PricingTable
+                  organizationId={currentOrg._id as Id<'organizations'>}
+                  currentTier={
+                    subscription && !subscription.isPersonalWorkspace && subscription.hasActiveSubscription
+                      ? (subscription.tier as 'pro' | 'enterprise' | 'personal')
+                      : undefined
+                  }
+                  currentInterval={
+                    subscription && subscription.hasActiveSubscription && subscription.billingInterval
+                      ? (subscription.billingInterval as 'month' | 'year')
+                      : undefined
+                  }
+                  hasCanceledSubscription={
+                    subscription &&
+                    !subscription.isPersonalWorkspace &&
+                    !subscription.hasActiveSubscription &&
+                    (subscription.status === 'canceled' ||
+                      subscription.status === 'paused' ||
+                      subscription.status === 'past_due' ||
+                      subscription.status === 'unpaid' ||
+                      subscription.cancelAtPeriodEnd)
+                  }
+                  isTrialEnded={
+                    subscription &&
+                    !subscription.isPersonalWorkspace &&
+                    subscription.status === 'paused' &&
+                    subscription.tier === 'personal'
+                  }
+                />
+              </div>
             </TabsContent>
 
             {/* Usage Tab */}
@@ -267,6 +327,44 @@ export default function BillingPage() {
                 </p>
               </div>
             </TabsContent>
+
+            {/* History Tab (Redesigned) */}
+            <TabsContent value="history" className="space-y-6">
+              <div className="rounded-xl border border-border bg-card p-6">
+                <div className="flex items-center justify-between mb-6">
+                  <div>
+                    <h3 className="font-semibold">Billing History</h3>
+                    <p className="text-sm text-muted-foreground mt-1">View your invoices and subscription events</p>
+                  </div>
+                  <Button variant="outline" size="sm" onClick={refreshHistory} disabled={isLoadingHistory}>
+                    <IconRefresh className={`h-4 w-4 mr-2 ${isLoadingHistory ? 'animate-spin' : ''}`} />
+                    Refresh
+                  </Button>
+                </div>
+
+                {isLoadingHistory ? (
+                  <div className="space-y-3">
+                    {[1, 2, 3, 4, 5].map((i) => (
+                      <Skeleton key={i} className="h-20 w-full" />
+                    ))}
+                  </div>
+                ) : billingHistory.length === 0 ? (
+                  <div className="text-center py-12">
+                    <IconFileInvoice className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
+                    <p className="text-muted-foreground">No billing history found.</p>
+                    <p className="text-sm text-muted-foreground mt-1">
+                      Your invoices and subscription events will appear here.
+                    </p>
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    {billingHistory.map((event) => (
+                      <BillingHistoryItem key={event.id} event={event} />
+                    ))}
+                  </div>
+                )}
+              </div>
+            </TabsContent>
           </Tabs>
         ) : isPersonalWorkspace && currentOrg ? (
           // Show pricing for personal workspaces
@@ -291,6 +389,114 @@ export default function BillingPage() {
         ) : null}
       </div>
     </PageShell>
+  );
+}
+
+interface BillingHistoryItemProps {
+  event: {
+    id: string;
+    type: string;
+    description: string;
+    amount?: number;
+    currency?: string;
+    status: string;
+    created: number;
+    invoiceUrl?: string;
+    invoicePdf?: string;
+  };
+}
+
+function BillingHistoryItem({ event }: BillingHistoryItemProps) {
+  const getIcon = () => {
+    if (event.type === 'invoice') {
+      if (event.status === 'paid') return <IconCheck className="h-4 w-4 text-emerald-500" />;
+      if (event.status === 'open') return <IconClock className="h-4 w-4 text-amber-500" />;
+      if (event.status === 'void' || event.status === 'uncollectible')
+        return <IconX className="h-4 w-4 text-red-500" />;
+      return <IconFileInvoice className="h-4 w-4 text-muted-foreground" />;
+    }
+    // Subscription events
+    if (event.description.includes('created') || event.description.includes('started'))
+      return <IconPlayerPlay className="h-4 w-4 text-emerald-500" />;
+    if (event.description.includes('canceled') || event.description.includes('deleted'))
+      return <IconX className="h-4 w-4 text-red-500" />;
+    if (event.description.includes('paused')) return <IconPlayerPause className="h-4 w-4 text-amber-500" />;
+    if (event.description.includes('resumed')) return <IconPlayerPlay className="h-4 w-4 text-emerald-500" />;
+    if (event.description.includes('updated')) return <IconRefresh className="h-4 w-4 text-blue-500" />;
+    if (event.description.includes('upgrade')) return <IconArrowUp className="h-4 w-4 text-emerald-500" />;
+    if (event.description.includes('downgrade')) return <IconArrowDown className="h-4 w-4 text-amber-500" />;
+    return <IconClock className="h-4 w-4 text-muted-foreground" />;
+  };
+
+  const getStatusBadge = () => {
+    const statusColors: Record<string, string> = {
+      paid: 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400',
+      open: 'bg-amber-500/10 text-amber-600 dark:text-amber-400',
+      draft: 'bg-muted text-muted-foreground',
+      void: 'bg-red-500/10 text-red-600 dark:text-red-400',
+      uncollectible: 'bg-red-500/10 text-red-600 dark:text-red-400',
+      completed: 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400',
+      canceled: 'bg-red-500/10 text-red-600 dark:text-red-400',
+      paused: 'bg-amber-500/10 text-amber-600 dark:text-amber-400',
+      warning: 'bg-amber-500/10 text-amber-600 dark:text-amber-400',
+    };
+
+    return (
+      <Badge variant="secondary" className={`text-xs ${statusColors[event.status] || ''}`}>
+        {event.status === 'paid' ? 'Paid' : event.status.charAt(0).toUpperCase() + event.status.slice(1)}
+      </Badge>
+    );
+  };
+
+  const formatAmount = (amount: number, currency: string) => {
+    return new Intl.NumberFormat('en-US', {
+      style: 'currency',
+      currency: currency.toUpperCase(),
+    }).format(amount / 100);
+  };
+
+  return (
+    <div className="flex items-start gap-4 rounded-lg border border-border bg-muted/30 p-4 hover:bg-muted/50 transition-colors">
+      {/* Icon */}
+      <div className="shrink-0 w-10 h-10 rounded-full bg-muted flex items-center justify-center">{getIcon()}</div>
+
+      {/* Content */}
+      <div className="flex-1 min-w-0">
+        <div className="flex items-center gap-2 mb-1">
+          <span className="font-medium">{event.description}</span>
+          {getStatusBadge()}
+        </div>
+        <div className="flex items-center gap-4 text-sm text-muted-foreground">
+          <span>{new Date(event.created).toLocaleDateString()}</span>
+          <span>{new Date(event.created).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+          {event.amount !== undefined && event.currency && (
+            <span className="font-medium text-foreground">{formatAmount(event.amount, event.currency)}</span>
+          )}
+        </div>
+      </div>
+
+      {/* Actions */}
+      {event.type === 'invoice' && (event.invoiceUrl || event.invoicePdf) && (
+        <div className="flex items-center gap-2">
+          {event.invoiceUrl && (
+            <Button variant="ghost" size="sm" asChild>
+              <a href={event.invoiceUrl} target="_blank" rel="noopener noreferrer">
+                <IconExternalLink className="h-4 w-4" />
+                <span className="sr-only">View Invoice</span>
+              </a>
+            </Button>
+          )}
+          {event.invoicePdf && (
+            <Button variant="ghost" size="sm" asChild>
+              <a href={event.invoicePdf} target="_blank" rel="noopener noreferrer" download>
+                <IconDownload className="h-4 w-4" />
+                <span className="sr-only">Download PDF</span>
+              </a>
+            </Button>
+          )}
+        </div>
+      )}
+    </div>
   );
 }
 

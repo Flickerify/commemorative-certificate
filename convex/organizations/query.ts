@@ -47,7 +47,34 @@ export const getOrganizationsByUserId = protectedQuery({
           .first();
 
         if (organization) {
-          return { ...organization, role: membership.role };
+          // Get subscription tier using indexed queries (more efficient)
+          // First check for 'active' status
+          let activeSubscription = await ctx.db
+            .query('organizationSubscriptions')
+            .withIndex('by_organization_and_status', (q) =>
+              q.eq('organizationId', organization._id).eq('status', 'active'),
+            )
+            .first();
+
+          // If no active, check for 'trialing'
+          if (!activeSubscription) {
+            activeSubscription = await ctx.db
+              .query('organizationSubscriptions')
+              .withIndex('by_organization_and_status', (q) =>
+                q.eq('organizationId', organization._id).eq('status', 'trialing'),
+              )
+              .first();
+          }
+
+          const subscriptionTier = activeSubscription?.tier || 'personal';
+          const hasActiveSubscription = !!activeSubscription;
+
+          return {
+            ...organization,
+            role: membership.role,
+            subscriptionTier,
+            hasActiveSubscription,
+          };
         }
       }),
     );
@@ -88,11 +115,35 @@ export const getCurrent = protectedQuery({
     // Get current user's role
     const currentUserMembership = memberships.find((m) => m.userId === ctx.user.externalId);
 
+    // Get subscription tier using indexed queries (more efficient)
+    // First check for 'active' status
+    let activeSubscription = await ctx.db
+      .query('organizationSubscriptions')
+      .withIndex('by_organization_and_status', (q) =>
+        q.eq('organizationId', organization._id).eq('status', 'active'),
+      )
+      .first();
+
+    // If no active, check for 'trialing'
+    if (!activeSubscription) {
+      activeSubscription = await ctx.db
+        .query('organizationSubscriptions')
+        .withIndex('by_organization_and_status', (q) =>
+          q.eq('organizationId', organization._id).eq('status', 'trialing'),
+        )
+        .first();
+    }
+
+    const subscriptionTier = activeSubscription?.tier || 'personal';
+    const hasActiveSubscription = !!activeSubscription;
+
     return {
       ...organization,
       domains,
       memberCount: memberships.length,
       currentUserRole: currentUserMembership?.role || 'member',
+      subscriptionTier,
+      hasActiveSubscription,
     };
   },
 });

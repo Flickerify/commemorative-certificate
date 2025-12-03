@@ -17,7 +17,11 @@ import { Doc } from '@/convex/_generated/dataModel';
 import { useQuery } from 'convex/react';
 import { api } from '@/convex/_generated/api';
 
-type Organization = Doc<'organizations'> & { role?: string };
+type Organization = Doc<'organizations'> & {
+  role?: string;
+  subscriptionTier?: string;
+  hasActiveSubscription?: boolean;
+};
 
 function getInitials(name: string): string {
   const words = name.trim().split(/\s+/);
@@ -88,7 +92,7 @@ export function OrganizationSwitcher({ className }: { className?: string }) {
   const router = useRouter();
   const { organizationId, switchToOrganization } = useAuth();
 
-  // Fetch organizations from Convex
+  // Fetch organizations from Convex (includes subscriptionTier from source of truth)
   const organizations = useQuery(api.organizations.query.getOrganizationsByUserId) as Organization[] | undefined;
 
   const handleSwitchToOrganization = async (orgExternalId: string) => {
@@ -115,20 +119,21 @@ export function OrganizationSwitcher({ className }: { className?: string }) {
     );
   }
 
-  // Find current org and categorize all organizations
+  // Find current org or use the first available
   const currentOrg = organizations?.find((org) => org.externalId === organizationId);
-  const personalOrgs = organizations?.filter((org) => org.metadata?.tier === 'personal') ?? [];
-  const teamOrgs = organizations?.filter((org) => org.metadata?.tier !== 'personal') ?? [];
-
-  // If we have organizations but can't find the current one, use the first available
-  // This handles the case where auth state is stale after org switch
   const effectiveCurrentOrg = currentOrg || organizations[0];
 
-  const getPlanFromOrg = (org: Organization): string => {
-    return (org.metadata?.tier as string) || 'personal';
-  };
+  // Helper to get tier from subscription (source of truth)
+  const getTier = (org: Organization): string => org.subscriptionTier || 'personal';
 
-  const isEffectivePersonal = effectiveCurrentOrg?.metadata?.tier === 'personal';
+  // Helper to check if org is personal tier
+  const isOrgPersonal = (org: Organization): boolean => getTier(org) === 'personal';
+
+  const isEffectivePersonal = isOrgPersonal(effectiveCurrentOrg);
+
+  // Categorize organizations by subscription tier
+  const personalOrgs = organizations?.filter((org) => isOrgPersonal(org)) ?? [];
+  const teamOrgs = organizations?.filter((org) => !isOrgPersonal(org)) ?? [];
 
   return (
     <DropdownMenu>
@@ -169,10 +174,10 @@ export function OrganizationSwitcher({ className }: { className?: string }) {
             <span
               className={cn(
                 'text-[10px] font-medium px-2 py-0.5 rounded-full capitalize',
-                planColors[getPlanFromOrg(effectiveCurrentOrg)] || planColors.free,
+                planColors[getTier(effectiveCurrentOrg)] || planColors.free,
               )}
             >
-              {getPlanFromOrg(effectiveCurrentOrg)}
+              {getTier(effectiveCurrentOrg)}
             </span>
           </div>
         </div>
@@ -187,6 +192,7 @@ export function OrganizationSwitcher({ className }: { className?: string }) {
               </DropdownMenuLabel>
               {personalOrgs.map((org) => {
                 const isCurrentOrg = effectiveCurrentOrg.externalId === org.externalId;
+                const plan = getTier(org);
                 return (
                   <DropdownMenuItem
                     key={org._id}
@@ -196,14 +202,17 @@ export function OrganizationSwitcher({ className }: { className?: string }) {
                       isCurrentOrg && 'bg-primary/5',
                     )}
                   >
-                    <OrgAvatar name={org.name} isPersonal size="sm" />
+                    <OrgAvatar name={org.name} isPersonal={isOrgPersonal(org)} size="sm" />
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2">
                         <p className="text-sm font-medium truncate">{org.name}</p>
                         <span
-                          className={cn('text-[9px] font-medium px-1.5 py-0.5 rounded capitalize', planColors.personal)}
+                          className={cn(
+                            'text-[9px] font-medium px-1.5 py-0.5 rounded capitalize',
+                            planColors[plan] || planColors.personal,
+                          )}
                         >
-                          Personal
+                          {plan}
                         </span>
                       </div>
                       <p className="text-xs text-muted-foreground capitalize">{org.role || 'Owner'}</p>
@@ -245,10 +254,10 @@ export function OrganizationSwitcher({ className }: { className?: string }) {
                         <span
                           className={cn(
                             'text-[9px] font-medium px-1.5 py-0.5 rounded capitalize',
-                            planColors[getPlanFromOrg(org)] || planColors.free,
+                            planColors[getTier(org)] || planColors.free,
                           )}
                         >
-                          {getPlanFromOrg(org)}
+                          {getTier(org)}
                         </span>
                       </div>
                       <p className="text-xs text-muted-foreground capitalize">{org.role || 'Member'}</p>
@@ -334,7 +343,7 @@ export function OrganizationSwitcher({ className }: { className?: string }) {
         </DropdownMenuGroup>
 
         {/* Upgrade CTA - contextual based on current plan */}
-        {getPlanFromOrg(effectiveCurrentOrg) !== 'enterprise' && (
+        {getTier(effectiveCurrentOrg) !== 'enterprise' && (
           <>
             <DropdownMenuSeparator className="my-0" />
             <div

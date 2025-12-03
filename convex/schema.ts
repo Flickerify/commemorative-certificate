@@ -220,6 +220,7 @@ export default defineSchema({
     .index('by_stripe_customer', ['stripeCustomerId']),
   organizationSubscriptions: organizationSubscriptions
     .index('by_organization', ['organizationId'])
+    .index('by_organization_and_status', ['organizationId', 'status'])
     .index('by_stripe_customer', ['stripeCustomerId'])
     .index('by_stripe_subscription', ['stripeSubscriptionId']),
   // Stripe webhook idempotency

@@ -60,6 +60,35 @@ export function getTierFromPriceId(priceId: string): 'personal' | 'pro' | 'enter
 }
 
 /**
+ * Tier order for comparison (higher number = higher tier).
+ */
+export const TIER_ORDER: Record<'personal' | 'pro' | 'enterprise', number> = {
+  personal: 1,
+  pro: 2,
+  enterprise: 3,
+};
+
+/**
+ * Check if newTier is an upgrade from currentTier.
+ */
+export function isUpgrade(
+  currentTier: 'personal' | 'pro' | 'enterprise',
+  newTier: 'personal' | 'pro' | 'enterprise',
+): boolean {
+  return TIER_ORDER[newTier] > TIER_ORDER[currentTier];
+}
+
+/**
+ * Check if newTier is a downgrade from currentTier.
+ */
+export function isDowngrade(
+  currentTier: 'personal' | 'pro' | 'enterprise',
+  newTier: 'personal' | 'pro' | 'enterprise',
+): boolean {
+  return TIER_ORDER[newTier] < TIER_ORDER[currentTier];
+}
+
+/**
  * Get billing interval from Stripe price ID.
  */
 export function getBillingIntervalFromPriceId(priceId: string): 'month' | 'year' {

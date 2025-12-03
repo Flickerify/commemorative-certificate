@@ -243,45 +243,10 @@ export const syncSubscriptionData = internalMutation({
     const organization = await ctx.db.get(organizationId);
     const workosId = organization?.externalId;
 
-    // Find existing subscription record
-    const existingSubscription = await ctx.db
-      .query('organizationSubscriptions')
-      .withIndex('by_organization', (q) => q.eq('organizationId', organizationId))
-      .first();
-
     // Handle "no subscription" case (legacy - shouldn't happen with new signup flow)
     if (args.subscription.status === 'none') {
-      if (existingSubscription) {
-        await ctx.db.patch(existingSubscription._id, {
-          status: 'none',
-          tier: 'personal',
-          seatLimit: TIER_SEAT_LIMITS.personal,
-          stripeSubscriptionId: undefined,
-          stripePriceId: undefined,
-          billingInterval: undefined,
-          currentPeriodStart: undefined,
-          currentPeriodEnd: undefined,
-          cancelAtPeriodEnd: false,
-          trialStart: undefined,
-          trialEnd: undefined,
-          paymentMethodBrand: undefined,
-          paymentMethodLast4: undefined,
-          updatedAt: now,
-        });
-      } else {
-        await ctx.db.insert('organizationSubscriptions', {
-          organizationId,
-          stripeCustomerId: args.stripeCustomerId,
-          tier: 'personal',
-          status: 'none',
-          cancelAtPeriodEnd: false,
-          seatLimit: TIER_SEAT_LIMITS.personal,
-          createdAt: now,
-          updatedAt: now,
-        });
-      }
-
-      // Sync to PlanetScale (personal tier, no active subscription)
+      // For "none" status, we don't create a subscription record
+      // Just sync to PlanetScale as personal tier
       if (workosId) {
         await ctx.scheduler.runAfter(0, internal.workflows.syncToPlanetScale.kickoffSubscriptionSync, {
           workosId,
@@ -289,32 +254,47 @@ export const syncSubscriptionData = internalMutation({
           status: 'none' as const,
         });
       }
-
       return null;
     }
 
+    // Find existing subscription record by stripeSubscriptionId (supports multiple subscriptions)
+    // TypeScript: We know subscriptionId exists because we returned early if status is 'none'
+    const subscriptionId = 'subscriptionId' in args.subscription ? args.subscription.subscriptionId : '';
+    const priceId = 'priceId' in args.subscription ? args.subscription.priceId : '';
+    const existingSubscription = await ctx.db
+      .query('organizationSubscriptions')
+      .withIndex('by_stripe_subscription', (q) => q.eq('stripeSubscriptionId', subscriptionId))
+      .first();
+
     // Determine tier and billing interval from price ID
-    const tier = getTierFromPriceId(args.subscription.priceId);
-    const billingInterval = getBillingIntervalFromPriceId(args.subscription.priceId);
+    const tier = getTierFromPriceId(priceId);
+    const billingInterval = getBillingIntervalFromPriceId(priceId);
     const seatLimit = TIER_SEAT_LIMITS[tier];
 
+    // TypeScript: We know all these properties exist because we returned early if status is 'none'
+    const subscription = 'subscriptionId' in args.subscription ? args.subscription : null;
+    if (!subscription) {
+      return null; // Should never happen, but TypeScript needs this
+    }
+
     const subscriptionData = {
+      organizationId,
       stripeCustomerId: args.stripeCustomerId,
-      stripeSubscriptionId: args.subscription.subscriptionId,
-      stripePriceId: args.subscription.priceId,
+      stripeSubscriptionId: subscriptionId,
+      stripePriceId: priceId,
       tier,
-      status: args.subscription.status,
+      status: subscription.status,
       billingInterval,
-      currentPeriodStart: args.subscription.currentPeriodStart * 1000, // Convert to ms
-      currentPeriodEnd: args.subscription.currentPeriodEnd * 1000,
-      cancelAtPeriodEnd: args.subscription.cancelAtPeriodEnd,
-      cancelAt: args.subscription.cancelAt ? args.subscription.cancelAt * 1000 : undefined, // Convert to ms
+      currentPeriodStart: subscription.currentPeriodStart * 1000, // Convert to ms
+      currentPeriodEnd: subscription.currentPeriodEnd * 1000,
+      cancelAtPeriodEnd: subscription.cancelAtPeriodEnd,
+      cancelAt: subscription.cancelAt ? subscription.cancelAt * 1000 : undefined, // Convert to ms
       // Trial info
-      trialStart: args.subscription.trialStart ? args.subscription.trialStart * 1000 : undefined, // Convert to ms
-      trialEnd: args.subscription.trialEnd ? args.subscription.trialEnd * 1000 : undefined, // Convert to ms
+      trialStart: subscription.trialStart ? subscription.trialStart * 1000 : undefined, // Convert to ms
+      trialEnd: subscription.trialEnd ? subscription.trialEnd * 1000 : undefined, // Convert to ms
       seatLimit,
-      paymentMethodBrand: args.subscription.paymentMethodBrand,
-      paymentMethodLast4: args.subscription.paymentMethodLast4,
+      paymentMethodBrand: subscription.paymentMethodBrand,
+      paymentMethodLast4: subscription.paymentMethodLast4,
       // Clear pending checkout state since we now have a real subscription
       pendingCheckoutSessionId: undefined,
       pendingPriceId: undefined,
@@ -325,18 +305,36 @@ export const syncSubscriptionData = internalMutation({
       await ctx.db.patch(existingSubscription._id, subscriptionData);
     } else {
       await ctx.db.insert('organizationSubscriptions', {
-        organizationId,
         ...subscriptionData,
         createdAt: now,
       });
     }
 
-    // Sync subscription tier to PlanetScale
+    // Sync subscription tier to PlanetScale - use the active subscription if available
     if (workosId) {
+      // Find the active subscription for this organization to determine the tier to sync
+      const activeSubscription = await ctx.db
+        .query('organizationSubscriptions')
+        .withIndex('by_organization', (q) => q.eq('organizationId', organizationId))
+        .filter((q) => q.or(q.eq(q.field('status'), 'active'), q.eq(q.field('status'), 'trialing')))
+        .first();
+
+      const subscriptionToSync = activeSubscription ||
+        existingSubscription || { tier, status: args.subscription.status };
+
       await ctx.scheduler.runAfter(0, internal.workflows.syncToPlanetScale.kickoffSubscriptionSync, {
         workosId,
-        tier,
-        status: args.subscription.status,
+        tier: subscriptionToSync.tier as 'personal' | 'pro' | 'enterprise',
+        status: subscriptionToSync.status as
+          | 'active'
+          | 'canceled'
+          | 'incomplete'
+          | 'incomplete_expired'
+          | 'past_due'
+          | 'paused'
+          | 'trialing'
+          | 'unpaid'
+          | 'none',
       });
     }
 
