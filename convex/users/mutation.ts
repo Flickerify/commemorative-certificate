@@ -25,7 +25,7 @@ export const provision = publicMutation({
     if (existing) {
       return existing._id;
     }
-
+    console.log('Provisioning user', identity);
     // Create user with minimal data - webhook will fill in the rest
     const userId = await ctx.db.insert('users', {
       externalId: identity.subject,

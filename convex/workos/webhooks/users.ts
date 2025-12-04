@@ -71,7 +71,12 @@ export async function handleUserWebhooks(ctx: Context<WorkosHonoEnv>) {
       }
 
       case 'user.deleted': {
-        // Kick off deletion workflow (deletes from PlanetScale first, then Convex with cascade)
+        // First, revoke all user sessions to force logout and invalidate tokens
+        await ctx.env.runAction(internal.workos.internal.action.revokeAllUserSessions, {
+          workosUserId: event.data.id,
+        });
+
+        // Then kick off deletion workflow (deletes from PlanetScale first, then Convex with cascade)
         await ctx.env.runMutation(internal.workflows.syncToPlanetScale.kickoffUserDeletion, {
           workosId: event.data.id,
         });
