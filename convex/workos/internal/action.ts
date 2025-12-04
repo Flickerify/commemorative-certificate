@@ -26,6 +26,25 @@ export const verifyWebhook = internalAction({
 });
 
 /**
+ * Verify a WorkOS action.
+ */
+export const verifyAction = internalAction({
+  args: {
+    payload: v.string(),
+    signature: v.string(),
+    secret: v.string(),
+  },
+  handler: async (_ctx, { payload, signature, secret }) => {
+    const workos = new WorkOS(process.env.WORKOS_API_KEY);
+    return await workos.actions.constructAction({
+      payload: JSON.parse(payload),
+      sigHeader: signature,
+      secret,
+    });
+  },
+});
+
+/**
  * Update user metadata in WorkOS.
  * WorkOS stores all metadata as strings.
  * This will trigger a user.updated webhook which syncs the metadata back to Convex.

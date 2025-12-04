@@ -5,28 +5,18 @@ import { Id, Doc } from '../_generated/dataModel';
 
 /**
  * Helper to find active subscription using the by_organization_and_status index.
- * Runs two indexed queries (active, trialing) which is more efficient than
- * collecting all subscriptions and filtering in memory.
  */
 async function findActiveSubscription(
   db: DatabaseReader,
   organizationId: Id<'organizations'>,
 ): Promise<Doc<'organizationSubscriptions'> | null> {
-  // Check for 'active' status first (most common)
+  // Check for 'active' status
   const activeSubscription = await db
     .query('organizationSubscriptions')
     .withIndex('by_organization_and_status', (q) => q.eq('organizationId', organizationId).eq('status', 'active'))
     .first();
 
-  if (activeSubscription) return activeSubscription;
-
-  // Check for 'trialing' status
-  const trialingSubscription = await db
-    .query('organizationSubscriptions')
-    .withIndex('by_organization_and_status', (q) => q.eq('organizationId', organizationId).eq('status', 'trialing'))
-    .first();
-
-  return trialingSubscription;
+  return activeSubscription;
 }
 
 /**
@@ -137,7 +127,7 @@ export const getStripeCustomer = internalQuery({
  * States:
  * - isPersonalWorkspace: true = Personal workspace (no subscription needed)
  * - isPendingSetup: true = Organization created but checkout not completed
- * - hasActiveSubscription: true = Active/trialing subscription
+ * - hasActiveSubscription: true = Active subscription
  * - hasActiveSubscription: false = Canceled/past_due/etc
  */
 export const getOrganizationSubscription = protectedQuery({
@@ -154,11 +144,6 @@ export const getOrganizationSubscription = protectedQuery({
       currentPeriodEnd: v.optional(v.number()),
       cancelAtPeriodEnd: v.boolean(),
       cancelAt: v.optional(v.number()), // Scheduled cancellation timestamp (ms)
-      // Trial info
-      trialStart: v.optional(v.number()),
-      trialEnd: v.optional(v.number()),
-      isTrialing: v.boolean(),
-      trialDaysRemaining: v.optional(v.number()),
       seatLimit: v.number(),
       paymentMethodBrand: v.optional(v.string()),
       paymentMethodLast4: v.optional(v.string()),
@@ -166,6 +151,9 @@ export const getOrganizationSubscription = protectedQuery({
       hasActiveSubscription: v.boolean(),
       isPersonalWorkspace: v.literal(false),
       isPendingSetup: v.literal(false),
+      // Money-back guarantee info
+      isWithinGuaranteePeriod: v.boolean(),
+      guaranteeDaysRemaining: v.optional(v.number()),
     }),
     // Personal workspace (no subscription) - legacy, should not happen with new signup flow
     v.object({
@@ -177,7 +165,6 @@ export const getOrganizationSubscription = protectedQuery({
       seatLimit: v.literal(1),
       features: v.array(v.string()),
       hasActiveSubscription: v.literal(false),
-      isTrialing: v.literal(false),
     }),
     // Pending setup (checkout not completed)
     v.object({
@@ -190,7 +177,6 @@ export const getOrganizationSubscription = protectedQuery({
       seatLimit: v.literal(1),
       features: v.array(v.string()),
       hasActiveSubscription: v.literal(false),
-      isTrialing: v.literal(false),
     }),
   ),
   handler: async (ctx, args) => {
@@ -198,15 +184,15 @@ export const getOrganizationSubscription = protectedQuery({
     const activeSubscription = await findActiveSubscription(ctx.db, args.organizationId);
 
     if (activeSubscription) {
-      const isTrialing = activeSubscription.status === 'trialing';
-
-      // Calculate trial days remaining
-      let trialDaysRemaining: number | undefined;
-      if (isTrialing && activeSubscription.trialEnd) {
-        const now = Date.now();
-        const msRemaining = activeSubscription.trialEnd - now;
-        trialDaysRemaining = Math.max(0, Math.ceil(msRemaining / (1000 * 60 * 60 * 24)));
-      }
+      // Calculate money-back guarantee period (30 days from subscription start)
+      const GUARANTEE_DAYS = 30;
+      const now = Date.now();
+      const subscriptionStart = activeSubscription.currentPeriodStart ?? activeSubscription.createdAt;
+      const guaranteeEndMs = subscriptionStart + GUARANTEE_DAYS * 24 * 60 * 60 * 1000;
+      const isWithinGuaranteePeriod = now < guaranteeEndMs;
+      const guaranteeDaysRemaining = isWithinGuaranteePeriod
+        ? Math.max(0, Math.ceil((guaranteeEndMs - now) / (1000 * 60 * 60 * 24)))
+        : undefined;
 
       return {
         isPersonalWorkspace: false as const,
@@ -218,15 +204,13 @@ export const getOrganizationSubscription = protectedQuery({
         currentPeriodEnd: activeSubscription.currentPeriodEnd,
         cancelAtPeriodEnd: activeSubscription.cancelAtPeriodEnd,
         cancelAt: activeSubscription.cancelAt,
-        trialStart: activeSubscription.trialStart,
-        trialEnd: activeSubscription.trialEnd,
-        isTrialing,
-        trialDaysRemaining,
         seatLimit: activeSubscription.seatLimit,
         paymentMethodBrand: activeSubscription.paymentMethodBrand,
         paymentMethodLast4: activeSubscription.paymentMethodLast4,
         features: getFeaturesForTier(activeSubscription.tier),
         hasActiveSubscription: true as const,
+        isWithinGuaranteePeriod,
+        guaranteeDaysRemaining,
       };
     }
 
@@ -247,7 +231,6 @@ export const getOrganizationSubscription = protectedQuery({
         seatLimit: 1 as const,
         features: getFeaturesForTier('personal'),
         hasActiveSubscription: false as const,
-        isTrialing: false as const,
       };
     }
 
@@ -265,7 +248,6 @@ export const getOrganizationSubscription = protectedQuery({
         seatLimit: 1 as const,
         features: getFeaturesForTier('personal'),
         hasActiveSubscription: false as const,
-        isTrialing: false as const,
       };
     }
 
@@ -280,14 +262,12 @@ export const getOrganizationSubscription = protectedQuery({
       currentPeriodEnd: mostRecentSubscription.currentPeriodEnd,
       cancelAtPeriodEnd: mostRecentSubscription.cancelAtPeriodEnd,
       cancelAt: mostRecentSubscription.cancelAt,
-      trialStart: mostRecentSubscription.trialStart,
-      trialEnd: mostRecentSubscription.trialEnd,
-      isTrialing: false,
       seatLimit: mostRecentSubscription.seatLimit,
       paymentMethodBrand: mostRecentSubscription.paymentMethodBrand,
       paymentMethodLast4: mostRecentSubscription.paymentMethodLast4,
       features: getFeaturesForTier(mostRecentSubscription.tier),
       hasActiveSubscription: false as const,
+      isWithinGuaranteePeriod: false,
     };
   },
 });
@@ -386,8 +366,8 @@ export const getSeatInfo = protectedQuery({
       .withIndex('by_organization', (q) => q.eq('organizationId', args.organizationId))
       .collect();
 
-    // Prioritize active/trialing subscriptions
-    const activeSubscription = allSubscriptions.find((sub) => sub.status === 'active' || sub.status === 'trialing');
+    // Prioritize active subscriptions
+    const activeSubscription = allSubscriptions.find((sub) => sub.status === 'active');
     const subscription =
       activeSubscription || allSubscriptions.sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0))[0];
 
@@ -616,56 +596,3 @@ function getFeaturesForTier(tier: 'personal' | 'pro' | 'enterprise'): string[] {
       return personalFeatures;
   }
 }
-
-/**
- * Check if the current user already has a personal organization with an active trial.
- * Used to enforce the rule: only ONE personal trial per user.
- */
-export const hasPersonalTrial = protectedQuery({
-  args: {},
-  returns: v.object({
-    hasExistingTrial: v.boolean(),
-    organizationName: v.optional(v.string()),
-  }),
-  handler: async (ctx) => {
-    // Get all organizations the user is a member of
-    const memberships = await ctx.db
-      .query('organizationMemberships')
-      .withIndex('by_user', (q) => q.eq('userId', ctx.user.externalId))
-      .collect();
-
-    if (memberships.length === 0) {
-      return { hasExistingTrial: false };
-    }
-
-    // Get organization IDs
-    const orgExternalIds = memberships.map((m) => m.organizationId);
-
-    // For each organization, check if it's a personal tier with trialing status
-    for (const orgExternalId of orgExternalIds) {
-      // Get the Convex organization by external ID
-      const organization = await ctx.db
-        .query('organizations')
-        .withIndex('externalId', (q) => q.eq('externalId', orgExternalId))
-        .first();
-
-      if (!organization) continue;
-
-      // Check the subscription
-      const subscription = await ctx.db
-        .query('organizationSubscriptions')
-        .withIndex('by_organization', (q) => q.eq('organizationId', organization._id))
-        .first();
-
-      // If personal tier with active or trialing status, user already has a trial
-      if (subscription && subscription.tier === 'personal' && ['active', 'trialing'].includes(subscription.status)) {
-        return {
-          hasExistingTrial: true,
-          organizationName: organization.name,
-        };
-      }
-    }
-
-    return { hasExistingTrial: false };
-  },
-});

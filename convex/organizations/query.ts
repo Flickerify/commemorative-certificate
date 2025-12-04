@@ -47,24 +47,13 @@ export const getOrganizationsByUserId = protectedQuery({
           .first();
 
         if (organization) {
-          // Get subscription tier using indexed queries (more efficient)
-          // First check for 'active' status
-          let activeSubscription = await ctx.db
+          // Get subscription tier using indexed query
+          const activeSubscription = await ctx.db
             .query('organizationSubscriptions')
             .withIndex('by_organization_and_status', (q) =>
               q.eq('organizationId', organization._id).eq('status', 'active'),
             )
             .first();
-
-          // If no active, check for 'trialing'
-          if (!activeSubscription) {
-            activeSubscription = await ctx.db
-              .query('organizationSubscriptions')
-              .withIndex('by_organization_and_status', (q) =>
-                q.eq('organizationId', organization._id).eq('status', 'trialing'),
-              )
-              .first();
-          }
 
           const subscriptionTier = activeSubscription?.tier || 'personal';
           const hasActiveSubscription = !!activeSubscription;
@@ -115,24 +104,13 @@ export const getCurrent = protectedQuery({
     // Get current user's role
     const currentUserMembership = memberships.find((m) => m.userId === ctx.user.externalId);
 
-    // Get subscription tier using indexed queries (more efficient)
-    // First check for 'active' status
-    let activeSubscription = await ctx.db
+    // Get subscription tier using indexed query
+    const activeSubscription = await ctx.db
       .query('organizationSubscriptions')
       .withIndex('by_organization_and_status', (q) =>
         q.eq('organizationId', organization._id).eq('status', 'active'),
       )
       .first();
-
-    // If no active, check for 'trialing'
-    if (!activeSubscription) {
-      activeSubscription = await ctx.db
-        .query('organizationSubscriptions')
-        .withIndex('by_organization_and_status', (q) =>
-          q.eq('organizationId', organization._id).eq('status', 'trialing'),
-        )
-        .first();
-    }
 
     const subscriptionTier = activeSubscription?.tier || 'personal';
     const hasActiveSubscription = !!activeSubscription;

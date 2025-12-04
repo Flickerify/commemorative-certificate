@@ -276,12 +276,6 @@ export default function BillingPage() {
                       subscription.status === 'unpaid' ||
                       subscription.cancelAtPeriodEnd)
                   }
-                  isTrialEnded={
-                    subscription &&
-                    !subscription.isPersonalWorkspace &&
-                    subscription.status === 'paused' &&
-                    subscription.tier === 'personal'
-                  }
                 />
               </div>
             </TabsContent>

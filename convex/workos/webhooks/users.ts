@@ -43,7 +43,7 @@ export async function handleUserWebhooks(ctx: Context<WorkosHonoEnv>) {
         });
 
         // Note: Organization creation is now handled in the onboarding flow
-        // where the user chooses their plan (Personal with trial, Pro, or Enterprise)
+        // where the user chooses their plan (Personal, Pro, or Enterprise)
         break;
       }
 

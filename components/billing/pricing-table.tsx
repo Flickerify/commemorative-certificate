@@ -9,7 +9,7 @@ import { Switch } from '@/components/ui/switch';
 import { Label } from '@/components/ui/label';
 import { Skeleton } from '@/components/ui/skeleton';
 import { CheckoutButton } from './checkout-button';
-import { IconCheck, IconUser, IconUsers, IconBuilding, IconSparkles, IconX } from '@tabler/icons-react';
+import { IconCheck, IconUser, IconUsers, IconBuilding, IconSparkles } from '@tabler/icons-react';
 import { cn } from '@/lib/utils';
 
 interface PricingTableProps {
@@ -18,13 +18,11 @@ interface PricingTableProps {
   /** Current billing interval: 'month' or 'year' */
   currentInterval?: 'month' | 'year';
   hasCanceledSubscription?: boolean;
-  /** If true, shows the personal plan as current but with trial ended state */
-  isTrialEnded?: boolean;
 }
 
 // Feature lists for each tier
 const planFeatures = {
-  personal: ['1 team member', 'Basic API access', 'Standard schemas', 'Community support', '14-day free trial'],
+  personal: ['1 team member', 'Basic API access', 'Standard schemas', 'Community support'],
   pro: [
     'Up to 3 team members',
     'Advanced API access',
@@ -63,7 +61,6 @@ interface PlanConfig {
   name: string;
   description: string;
   popular: boolean;
-  trial?: boolean;
   priceIdMonthly?: string;
   priceIdYearly?: string;
 }
@@ -74,7 +71,6 @@ const plans: PlanConfig[] = [
     name: 'Personal',
     description: 'For individuals getting started',
     popular: false,
-    trial: true,
     priceIdMonthly: process.env.NEXT_PUBLIC_PRICE_PERSONAL_MONTHLY,
     priceIdYearly: process.env.NEXT_PUBLIC_PRICE_PERSONAL_YEARLY,
   },
@@ -101,13 +97,9 @@ export function PricingTable({
   currentTier,
   currentInterval,
   hasCanceledSubscription = false,
-  isTrialEnded = false,
 }: PricingTableProps) {
   // Default to the current interval if available, otherwise monthly
   const [isYearly, setIsYearly] = useState(currentInterval === 'year');
-
-  // If trial ended, treat personal as current plan for display purposes
-  const effectiveCurrentTier = isTrialEnded ? 'personal' : currentTier;
 
   // Determine if user is viewing a different interval than their current subscription
   const selectedInterval = isYearly ? 'year' : 'month';
@@ -115,6 +107,12 @@ export function PricingTable({
 
   return (
     <div className="space-y-8">
+      {/* Money-back guarantee notice */}
+      <div className="flex items-center justify-center gap-2 text-sm text-muted-foreground">
+        <IconCheck className="h-4 w-4 text-emerald-500" />
+        <span>All plans include a 30-day money-back guarantee</span>
+      </div>
+
       {/* Billing toggle */}
       <div className="flex items-center justify-center gap-3">
         <Label htmlFor="billing-toggle" className={cn(!isYearly && 'font-medium')}>
@@ -132,18 +130,15 @@ export function PricingTable({
       {/* Plans grid */}
       <div className="grid gap-6 md:grid-cols-3 max-w-5xl mx-auto">
         {plans.map((plan) => {
-          const isCurrentTierPlan = effectiveCurrentTier !== undefined && plan.id === effectiveCurrentTier;
+          const isCurrentTierPlan = currentTier !== undefined && plan.id === currentTier;
           // Current plan means same tier AND same interval (or no interval change)
           const isCurrentPlan = isCurrentTierPlan && !isViewingDifferentInterval;
           // Interval switch: same tier but different interval
           const isIntervalSwitch = isCurrentTierPlan && isViewingDifferentInterval;
-          const isPausedPersonalPlan = isTrialEnded && plan.id === 'personal';
           const PlanIcon = planIcons[plan.id];
           const features = planFeatures[plan.id];
           const pricing = staticPricing[plan.id];
           const priceId = isYearly ? plan.priceIdYearly : plan.priceIdMonthly;
-          // Disable trial for personal plan if subscription was canceled or trial ended (no trial for returning customers)
-          const allowTrial = plan.trial && !hasCanceledSubscription && !isTrialEnded;
 
           // Determine tier relationship for button text
           const tierOrder: Record<'personal' | 'pro' | 'enterprise', number> = {
@@ -168,7 +163,6 @@ export function PricingTable({
             }
             if (isDowngrade) return 'Downgrade';
             if (isUpgrade) return 'Upgrade';
-            if (allowTrial) return 'Start Free Trial';
             return 'Subscribe';
           };
 
@@ -219,45 +213,17 @@ export function PricingTable({
 
                 {/* Features */}
                 <ul className="space-y-2">
-                  {features.map((feature) => {
-                    const isTrialFeature = feature.includes('free trial');
-                    const showTrialEnded = isPausedPersonalPlan && isTrialFeature;
-
-                    return (
-                      <li key={feature} className="flex items-start gap-2 text-sm">
-                        {showTrialEnded ? (
-                          <>
-                            <IconX className="h-4 w-4 text-muted-foreground mt-0.5 shrink-0" />
-                            <span className="flex-1">
-                              <span className="line-through text-muted-foreground">{feature}</span>
-                              <span className="ml-2 text-xs text-amber-600 dark:text-amber-400">(Trial ended)</span>
-                            </span>
-                          </>
-                        ) : (
-                          <>
-                            <IconCheck className="h-4 w-4 text-emerald-500 mt-0.5 shrink-0" />
-                            <span>{feature}</span>
-                          </>
-                        )}
-                      </li>
-                    );
-                  })}
+                  {features.map((feature) => (
+                    <li key={feature} className="flex items-start gap-2 text-sm">
+                      <IconCheck className="h-4 w-4 text-emerald-500 mt-0.5 shrink-0" />
+                      <span>{feature}</span>
+                    </li>
+                  ))}
                 </ul>
               </CardContent>
 
               <CardFooter className="flex-col gap-2">
-                {isPausedPersonalPlan ? (
-                  // Trial ended - show reactivate button
-                  organizationId && priceId ? (
-                    <CheckoutButton organizationId={organizationId} priceId={priceId} className="w-full">
-                      Reactivate Subscription
-                    </CheckoutButton>
-                  ) : (
-                    <Button className="w-full" disabled>
-                      {priceId ? 'Select Organization' : 'Configure Stripe'}
-                    </Button>
-                  )
-                ) : isCurrentPlan ? (
+                {isCurrentPlan ? (
                   <Button variant="outline" className="w-full" disabled>
                     Current Plan
                   </Button>

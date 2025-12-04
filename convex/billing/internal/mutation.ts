@@ -212,8 +212,6 @@ export const syncSubscriptionData = internalMutation({
         currentPeriodEnd: v.number(),
         cancelAtPeriodEnd: v.boolean(),
         cancelAt: v.optional(v.number()), // Stripe's scheduled cancellation timestamp
-        trialStart: v.optional(v.number()), // Trial start timestamp (seconds)
-        trialEnd: v.optional(v.number()), // Trial end timestamp (seconds)
         paymentMethodBrand: v.optional(v.string()),
         paymentMethodLast4: v.optional(v.string()),
       }),
@@ -289,9 +287,6 @@ export const syncSubscriptionData = internalMutation({
       currentPeriodEnd: subscription.currentPeriodEnd * 1000,
       cancelAtPeriodEnd: subscription.cancelAtPeriodEnd,
       cancelAt: subscription.cancelAt ? subscription.cancelAt * 1000 : undefined, // Convert to ms
-      // Trial info
-      trialStart: subscription.trialStart ? subscription.trialStart * 1000 : undefined, // Convert to ms
-      trialEnd: subscription.trialEnd ? subscription.trialEnd * 1000 : undefined, // Convert to ms
       seatLimit,
       paymentMethodBrand: subscription.paymentMethodBrand,
       paymentMethodLast4: subscription.paymentMethodLast4,
@@ -316,7 +311,7 @@ export const syncSubscriptionData = internalMutation({
       const activeSubscription = await ctx.db
         .query('organizationSubscriptions')
         .withIndex('by_organization', (q) => q.eq('organizationId', organizationId))
-        .filter((q) => q.or(q.eq(q.field('status'), 'active'), q.eq(q.field('status'), 'trialing')))
+        .filter((q) => q.eq(q.field('status'), 'active'))
         .first();
 
       const subscriptionToSync = activeSubscription ||

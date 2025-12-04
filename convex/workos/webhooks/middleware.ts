@@ -30,3 +30,25 @@ export const workosWebhookMiddleware = (secret: string) =>
       });
     }
   });
+
+export const workosActionMiddleware = (secret: string) =>
+  createMiddleware<WorkosHonoEnv>(async (ctx: Context<WorkosHonoEnv>, next: Next) => {
+    const request = ctx.req;
+    const bodyText = await request.text();
+    const sigHeader = String(request.header('workos-signature'));
+
+    try {
+      const result = await ctx.env.runAction(internal.workos.internal.action.verifyAction, {
+        payload: bodyText,
+        signature: sigHeader,
+        secret,
+      });
+      ctx.set('workosActionContext', result);
+      await next();
+    } catch (error) {
+      console.error('Error verifying action', error);
+      return new Response('Signature Verification Error Occured', {
+        status: 400,
+      });
+    }
+  });

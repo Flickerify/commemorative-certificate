@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { useAction, useQuery } from 'convex/react';
+import { useAction } from 'convex/react';
 import { useAuth } from '@workos-inc/authkit-nextjs/components';
 import { api } from '@/convex/_generated/api';
 import { PageShell } from '@/components/dashboard/page-shell';
@@ -13,7 +13,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Badge } from '@/components/ui/badge';
 import { Switch } from '@/components/ui/switch';
 import { cn } from '@/lib/utils';
-import { Building2, Loader2, ArrowLeft, ArrowRight, Users, Shield, Zap, Check, Sparkles, Info } from 'lucide-react';
+import { Building2, Loader2, ArrowLeft, ArrowRight, Users, Shield, Zap, Check, Sparkles } from 'lucide-react';
 
 // Pricing configuration - must match Stripe
 const plans = [
@@ -26,8 +26,7 @@ const plans = [
     yearlyPrice: 299.99,
     priceIdMonthly: process.env.NEXT_PUBLIC_PRICE_PERSONAL_MONTHLY,
     priceIdYearly: process.env.NEXT_PUBLIC_PRICE_PERSONAL_YEARLY,
-    trial: true,
-    features: ['1 team member', 'Basic API access', 'Standard schemas', 'Community support', '14-day free trial'],
+    features: ['1 team member', 'Basic API access', 'Standard schemas', 'Community support'],
   },
   {
     id: 'pro' as const,
@@ -38,7 +37,6 @@ const plans = [
     yearlyPrice: 599.99,
     priceIdMonthly: process.env.NEXT_PUBLIC_PRICE_PRO_MONTHLY,
     priceIdYearly: process.env.NEXT_PUBLIC_PRICE_PRO_YEARLY,
-    trial: false,
     features: [
       'Up to 3 team members',
       'Advanced API access',
@@ -57,7 +55,6 @@ const plans = [
     yearlyPrice: 5999.99,
     priceIdMonthly: process.env.NEXT_PUBLIC_PRICE_ENTERPRISE_MONTHLY,
     priceIdYearly: process.env.NEXT_PUBLIC_PRICE_ENTERPRISE_YEARLY,
-    trial: false,
     features: [
       'Unlimited team members',
       'Everything in Pro',
@@ -77,10 +74,6 @@ export default function NewOrganizationPage() {
   const router = useRouter();
   const { switchToOrganization } = useAuth();
   const createOrganization = useAction(api.organizations.action.create);
-
-  // Check if user already has a personal trial (only one allowed)
-  const personalTrialCheck = useQuery(api.billing.query.hasPersonalTrial);
-  const hasExistingPersonalTrial = personalTrialCheck?.hasExistingTrial ?? false;
 
   const [step, setStep] = useState<Step>('name');
   const [name, setName] = useState('');
@@ -138,16 +131,15 @@ export default function NewOrganizationPage() {
       await switchToOrganization(result.workosOrganizationId);
       console.log(`[Auth] Switched to new organization: ${result.workosOrganizationId}`);
 
-      // Handle redirect based on plan type
+      // Redirect to Stripe checkout for payment
+      // All plans require payment with a 30-day money-back guarantee
       if (result.checkoutUrl) {
-        // Pro/Enterprise: Redirect immediately to Stripe checkout for payment
-        // Stripe will redirect to success URL after payment completes
         console.log(`[Auth] Redirecting to Stripe checkout for organization: ${result.workosOrganizationId}`);
         window.location.href = result.checkoutUrl;
       } else {
-        // Personal trial: Go directly to billing page (no payment needed)
-        console.log(`[Auth] Personal trial started for organization: ${result.workosOrganizationId}`);
-        window.location.href = '/administration/billing?success=true&trial=started';
+        // Fallback - should not happen
+        console.error(`[Auth] No checkout URL returned`);
+        window.location.href = '/administration/billing?success=true';
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to create organization');
@@ -278,20 +270,11 @@ export default function NewOrganizationPage() {
           </div>
         ) : (
           <div className="space-y-8">
-            {/* Info banner for users who already have a trial */}
-            {hasExistingPersonalTrial && (
-              <div className="flex items-start gap-3 rounded-lg border border-amber-200 bg-amber-50 p-4 dark:border-amber-800 dark:bg-amber-950/30">
-                <Info className="h-5 w-5 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
-                <div className="text-sm">
-                  <p className="font-medium text-amber-800 dark:text-amber-200">
-                    You already have a Personal organization with a free trial
-                  </p>
-                  <p className="text-amber-700 dark:text-amber-300 mt-1">
-                    Additional Personal organizations require payment. Consider upgrading to Pro for more team members.
-                  </p>
-                </div>
-              </div>
-            )}
+            {/* Money-back guarantee banner */}
+            <div className="flex items-center justify-center gap-2 text-sm text-muted-foreground">
+              <Shield className="h-4 w-4 text-emerald-500" />
+              <span>All plans include a 30-day money-back guarantee</span>
+            </div>
 
             {/* Billing toggle */}
             <div className="flex items-center justify-center gap-3">
@@ -331,26 +314,6 @@ export default function NewOrganizationPage() {
                         </Badge>
                       </div>
                     )}
-                    {plan.trial && !hasExistingPersonalTrial && (
-                      <div className="absolute -top-3 left-1/2 -translate-x-1/2">
-                        <Badge
-                          variant="secondary"
-                          className="gap-1 bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400"
-                        >
-                          14-day free trial
-                        </Badge>
-                      </div>
-                    )}
-                    {plan.trial && hasExistingPersonalTrial && (
-                      <div className="absolute -top-3 left-1/2 -translate-x-1/2">
-                        <Badge
-                          variant="secondary"
-                          className="gap-1 bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400"
-                        >
-                          Payment required
-                        </Badge>
-                      </div>
-                    )}
 
                     <CardHeader className="text-center pt-6">
                       <div className="flex items-center justify-between">
@@ -377,16 +340,6 @@ export default function NewOrganizationPage() {
                         {isYearly && (
                           <p className="text-sm text-muted-foreground mt-1">
                             ${Math.round(price / 12)}/month billed annually
-                          </p>
-                        )}
-                        {plan.trial && !hasExistingPersonalTrial && (
-                          <p className="text-sm text-emerald-600 dark:text-emerald-400 mt-1 font-medium">
-                            Free for 14 days, then ${price}/{isYearly ? 'year' : 'month'}
-                          </p>
-                        )}
-                        {plan.trial && hasExistingPersonalTrial && (
-                          <p className="text-sm text-amber-600 dark:text-amber-400 mt-1 font-medium">
-                            Billed immediately (trial already used)
                           </p>
                         )}
                       </div>
@@ -422,9 +375,7 @@ export default function NewOrganizationPage() {
                 ) : (
                   <>
                     <Building2 className="h-4 w-4" />
-                    {selectedPlan === 'personal' && !hasExistingPersonalTrial
-                      ? 'Start Free Trial'
-                      : 'Create & Subscribe'}
+                    Continue to Payment
                   </>
                 )}
               </Button>

@@ -66,8 +66,8 @@ export const TIER_SEAT_LIMITS: Record<SubscriptionTier, number> = {
   enterprise: -1, // unlimited
 };
 
-// Trial configuration
-export const TRIAL_PERIOD_DAYS = 14;
+// Money-back guarantee period (days)
+export const MONEY_BACK_GUARANTEE_DAYS = 30;
 
 // Stripe customer - links organizations to Stripe
 export const stripeCustomers = defineTable({
@@ -89,9 +89,6 @@ export const organizationSubscriptions = defineTable({
   currentPeriodEnd: v.optional(v.number()),
   cancelAtPeriodEnd: v.boolean(),
   cancelAt: v.optional(v.number()), // Stripe's scheduled cancellation timestamp (ms)
-  // Trial info
-  trialStart: v.optional(v.number()), // Trial start timestamp (ms)
-  trialEnd: v.optional(v.number()), // Trial end timestamp (ms)
   seatLimit: v.number(), // -1 for unlimited
   // Payment method info (optional)
   paymentMethodBrand: v.optional(v.string()),

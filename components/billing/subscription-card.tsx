@@ -21,7 +21,7 @@ import {
   IconLoader2,
   IconCreditCard,
   IconRefresh,
-  IconClock,
+  IconShieldCheck,
 } from '@tabler/icons-react';
 import { toast } from 'sonner';
 
@@ -55,7 +55,6 @@ const tierConfig = {
 
 const statusConfig: Record<string, { label: string; variant: 'default' | 'secondary' | 'destructive' | 'outline' }> = {
   active: { label: 'Active', variant: 'default' },
-  trialing: { label: 'Trial', variant: 'secondary' },
   past_due: { label: 'Past Due', variant: 'destructive' },
   canceled: { label: 'Canceled', variant: 'outline' },
   incomplete: { label: 'Incomplete', variant: 'destructive' },
@@ -106,16 +105,15 @@ export function SubscriptionCard({ organizationId }: SubscriptionCardProps) {
             </div>
           </div>
           <div className="flex items-center gap-2">
-            {subscription.isTrialing && subscription.trialDaysRemaining !== undefined ? (
+            <Badge variant={statusInfo.variant}>{statusInfo.label}</Badge>
+            {subscription.isWithinGuaranteePeriod && (
               <Badge
                 variant="secondary"
                 className="bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400"
               >
-                <IconClock className="mr-1 h-3 w-3" />
-                {subscription.trialDaysRemaining} day{subscription.trialDaysRemaining === 1 ? '' : 's'} left
+                <IconShieldCheck className="mr-1 h-3 w-3" />
+                Money-back guarantee
               </Badge>
-            ) : (
-              <Badge variant={statusInfo.variant}>{statusInfo.label}</Badge>
             )}
           </div>
         </div>
@@ -134,39 +132,21 @@ export function SubscriptionCard({ organizationId }: SubscriptionCardProps) {
           {!seatInfo.isUnlimited && <Progress value={seatInfo.utilizationPercent} className="h-2" />}
         </div>
 
-        {/* Trial banner - prompt to add payment method */}
-        {subscription.isTrialing && (
+        {/* Money-back guarantee banner */}
+        {subscription.isWithinGuaranteePeriod && subscription.guaranteeDaysRemaining !== undefined && (
           <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 p-4">
             <div className="flex items-start gap-3">
               <div className="rounded-full bg-emerald-500/20 p-2">
-                <IconClock className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
+                <IconShieldCheck className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
               </div>
               <div className="flex-1 space-y-1">
-                <p className="font-medium text-emerald-700 dark:text-emerald-300">
-                  {subscription.trialDaysRemaining !== undefined && subscription.trialDaysRemaining > 0
-                    ? `${subscription.trialDaysRemaining} day${subscription.trialDaysRemaining === 1 ? '' : 's'} left in your trial`
-                    : 'Your trial is ending soon'}
-                </p>
+                <p className="font-medium text-emerald-700 dark:text-emerald-300">30-day money-back guarantee</p>
                 <p className="text-sm text-emerald-600/80 dark:text-emerald-400/80">
-                  {subscription.paymentMethodLast4
-                    ? 'Your card will be charged when the trial ends.'
-                    : 'Add a payment method to continue using the service after your trial.'}
+                  {subscription.guaranteeDaysRemaining} day{subscription.guaranteeDaysRemaining === 1 ? '' : 's'}{' '}
+                  remaining to request a full refund if you&apos;re not satisfied.
                 </p>
               </div>
             </div>
-            {!subscription.paymentMethodLast4 && (
-              <div className="mt-3 ml-11">
-                <BillingPortalButton
-                  organizationId={organizationId}
-                  variant="default"
-                  size="sm"
-                  className="bg-emerald-600 hover:bg-emerald-700"
-                >
-                  <IconCreditCard className="mr-2 h-4 w-4" />
-                  Add Payment Method
-                </BillingPortalButton>
-              </div>
-            )}
           </div>
         )}
 
@@ -224,29 +204,6 @@ export function SubscriptionCard({ organizationId }: SubscriptionCardProps) {
           <BillingPortalButton organizationId={organizationId} variant="outline" className="w-full">
             Manage Subscription
           </BillingPortalButton>
-        ) : subscription.status === 'paused' ? (
-          // Trial ended without payment method - direct to portal to add card
-          <div className="flex flex-col gap-4 w-full">
-            <div className="flex items-start gap-3">
-              <div className="rounded-full bg-red-500/20 p-2">
-                <IconAlertTriangle className="h-4 w-4 text-red-600 dark:text-red-400" />
-              </div>
-              <div className="flex-1 space-y-1">
-                <p className="font-medium text-red-700 dark:text-red-300">Your trial has ended</p>
-                <p className="text-sm text-red-600/80 dark:text-red-400/80">
-                  Add a payment method to reactivate your subscription and continue using the service.
-                </p>
-              </div>
-            </div>
-            <BillingPortalButton
-              organizationId={organizationId}
-              variant="default"
-              className="w-full bg-red-600 hover:bg-red-700"
-            >
-              <IconCreditCard className="mr-2 h-4 w-4" />
-              Add Payment Method
-            </BillingPortalButton>
-          </div>
         ) : subscription.status === 'past_due' || subscription.status === 'unpaid' ? (
           // Payment failed
           <div className="flex flex-col gap-2 w-full">

@@ -68,7 +68,6 @@ const plans = [
     name: 'Personal',
     description: 'For individuals getting started',
     icon: User,
-    trial: true,
     monthlyPrice: 29.99,
     yearlyPrice: 299.99,
     priceIdMonthly: process.env.NEXT_PUBLIC_PRICE_PERSONAL_MONTHLY,
@@ -100,7 +99,7 @@ const plans = [
   },
 ];
 
-type Step = 'welcome' | 'language' | 'organization' | 'plan' | 'complete';
+type Step = 'welcome' | 'language' | 'organization' | 'plan';
 
 export default function OnboardingPage() {
   const router = useRouter();
@@ -209,22 +208,18 @@ export default function OnboardingPage() {
       console.log(`[Onboarding] Switched to organization: ${result.workosOrganizationId}`);
 
       // Small delay to ensure auth cookies are set before redirect
-      await new Promise((resolve) => setTimeout(resolve, 500));
+      await new Promise((resolve) => setTimeout(resolve, 1000));
 
-      // 4. Handle redirect based on plan type
+      // 4. Redirect to Stripe checkout for payment
+      // All plans require payment with a 30-day money-back guarantee
       const checkoutUrl = result.checkoutUrl;
       if (checkoutUrl) {
-        // Pro/Enterprise: Redirect immediately to Stripe checkout for payment
-        // No need to show "complete" step - Stripe will redirect to dashboard after payment
         console.log(`[Onboarding] Redirecting to Stripe checkout`);
         window.location.href = checkoutUrl;
       } else {
-        // Personal trial: Show success and go to dashboard (no payment needed)
-        setStep('complete');
-        console.log(`[Onboarding] Personal trial started, redirecting to dashboard`);
-        setTimeout(() => {
-          window.location.href = '/?onboarding=complete&trial=started';
-        }, 1000);
+        // Fallback - should not happen
+        console.error(`[Onboarding] No checkout URL returned`);
+        window.location.href = '/?onboarding=complete';
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to create organization');
@@ -248,7 +243,7 @@ export default function OnboardingPage() {
     );
   }
 
-  const steps: Step[] = ['welcome', 'language', 'organization', 'plan', 'complete'];
+  const steps: Step[] = ['welcome', 'language', 'organization', 'plan'];
   const currentStepIndex = steps.indexOf(step);
 
   return (
@@ -298,7 +293,7 @@ export default function OnboardingPage() {
         <div className="w-full max-w-lg">
           {/* Progress indicator */}
           <div className="flex items-center gap-2 mb-8">
-            {steps.slice(0, -1).map((s, index) => (
+            {steps.map((s, index) => (
               <div
                 key={s}
                 className={cn(
@@ -461,9 +456,7 @@ export default function OnboardingPage() {
             <div className="space-y-6">
               <div className="text-center">
                 <h2 className="text-2xl font-bold mb-2">Choose Your Plan</h2>
-                <p className="text-muted-foreground">
-                  Start with a 14-day free trial on Personal, or go Pro right away.
-                </p>
+                <p className="text-muted-foreground">All plans include a 30-day money-back guarantee.</p>
               </div>
 
               {/* Billing toggle */}
@@ -511,14 +504,6 @@ export default function OnboardingPage() {
                             <div>
                               <CardTitle className="text-base flex items-center gap-2">
                                 {plan.name}
-                                {plan.trial && (
-                                  <Badge
-                                    variant="secondary"
-                                    className="bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400"
-                                  >
-                                    14-day free trial
-                                  </Badge>
-                                )}
                                 {plan.popular && <Badge>Popular</Badge>}
                               </CardTitle>
                               <CardDescription>{plan.description}</CardDescription>
@@ -539,15 +524,16 @@ export default function OnboardingPage() {
                             </div>
                           ))}
                         </div>
-                        {plan.trial && (
-                          <p className="text-xs text-emerald-600 dark:text-emerald-400 mt-2">
-                            Free for 14 days, then ${price}/{isYearly ? 'year' : 'month'}
-                          </p>
-                        )}
                       </CardContent>
                     </Card>
                   );
                 })}
+              </div>
+
+              {/* Money-back guarantee note */}
+              <div className="flex items-center justify-center gap-2 text-sm text-muted-foreground">
+                <Shield className="h-4 w-4 text-emerald-500" />
+                <span>30-day money-back guarantee on all plans</span>
               </div>
 
               {error && <p className="text-sm text-destructive text-center">{error}</p>}
@@ -563,11 +549,6 @@ export default function OnboardingPage() {
                       <Loader2 className="h-4 w-4 animate-spin" />
                       Creating…
                     </>
-                  ) : selectedPlan === 'personal' ? (
-                    <>
-                      Start Free Trial
-                      <ArrowRight className="h-4 w-4" />
-                    </>
                   ) : (
                     <>
                       Continue to Payment
@@ -579,39 +560,18 @@ export default function OnboardingPage() {
             </div>
           )}
 
-          {/* Step: Complete - Only shown for Personal trial */}
-          {step === 'complete' && (
-            <div className="space-y-8 text-center">
-              <div>
-                <div className="h-20 w-20 rounded-full bg-green-500/10 flex items-center justify-center mx-auto mb-4 animate-in zoom-in-50 duration-300">
-                  <CheckCircle2 className="h-10 w-10 text-green-500" />
-                </div>
-                <h2 className="text-2xl font-bold mb-2">You're All Set!</h2>
-                <p className="text-muted-foreground">
-                  Your 14-day free trial has started. Redirecting to your dashboard…
-                </p>
-              </div>
-
-              <div className="flex justify-center">
-                <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
-              </div>
-            </div>
-          )}
-
           {/* Terms */}
-          {step !== 'complete' && (
-            <p className="text-xs text-center text-muted-foreground mt-8">
-              By continuing, you agree to our{' '}
-              <a href="/terms" className="underline hover:text-foreground">
-                Terms of Service
-              </a>{' '}
-              and{' '}
-              <a href="/privacy" className="underline hover:text-foreground">
-                Privacy Policy
-              </a>
-              .
-            </p>
-          )}
+          <p className="text-xs text-center text-muted-foreground mt-8">
+            By continuing, you agree to our{' '}
+            <a href="/terms" className="underline hover:text-foreground">
+              Terms of Service
+            </a>{' '}
+            and{' '}
+            <a href="/privacy" className="underline hover:text-foreground">
+              Privacy Policy
+            </a>
+            .
+          </p>
         </div>
       </div>
     </div>

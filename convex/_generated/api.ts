@@ -13,6 +13,7 @@ import type * as billing_internal_mutation from "../billing/internal/mutation.js
 import type * as billing_query from "../billing/query.js";
 import type * as billing_stripe from "../billing/stripe.js";
 import type * as controllers_stripeWebhooksController from "../controllers/stripeWebhooksController.js";
+import type * as controllers_workosActionsController from "../controllers/workosActionsController.js";
 import type * as controllers_workosWebhooksController from "../controllers/workosWebhooksController.js";
 import type * as env from "../env.js";
 import type * as functions from "../functions.js";
@@ -39,6 +40,8 @@ import type * as users_mutation from "../users/mutation.js";
 import type * as users_query from "../users/query.js";
 import type * as users_utils from "../users/utils.js";
 import type * as workflows_syncToPlanetScale from "../workflows/syncToPlanetScale.js";
+import type * as workos_actions_authorization from "../workos/actions/authorization.js";
+import type * as workos_actions_registration from "../workos/actions/registration.js";
 import type * as workos_internal_action from "../workos/internal/action.js";
 import type * as workos_webhooks_memberships from "../workos/webhooks/memberships.js";
 import type * as workos_webhooks_middleware from "../workos/webhooks/middleware.js";
@@ -58,6 +61,7 @@ const fullApi: ApiFromModules<{
   "billing/query": typeof billing_query;
   "billing/stripe": typeof billing_stripe;
   "controllers/stripeWebhooksController": typeof controllers_stripeWebhooksController;
+  "controllers/workosActionsController": typeof controllers_workosActionsController;
   "controllers/workosWebhooksController": typeof controllers_workosWebhooksController;
   env: typeof env;
   functions: typeof functions;
@@ -84,6 +88,8 @@ const fullApi: ApiFromModules<{
   "users/query": typeof users_query;
   "users/utils": typeof users_utils;
   "workflows/syncToPlanetScale": typeof workflows_syncToPlanetScale;
+  "workos/actions/authorization": typeof workos_actions_authorization;
+  "workos/actions/registration": typeof workos_actions_registration;
   "workos/internal/action": typeof workos_internal_action;
   "workos/webhooks/memberships": typeof workos_webhooks_memberships;
   "workos/webhooks/middleware": typeof workos_webhooks_middleware;

@@ -223,7 +223,7 @@ export default function OrganizationPage() {
               </div>
             </div>
 
-            {/* Danger Zone - Allow deletion for all organization types (including personal/trial) */}
+            {/* Danger Zone - Allow deletion for all organization types */}
             {isAdmin && (
               <div className="rounded-xl border border-destructive/20 bg-destructive/5 p-6 space-y-4">
                 <h3 className="font-semibold text-destructive">Danger Zone</h3>

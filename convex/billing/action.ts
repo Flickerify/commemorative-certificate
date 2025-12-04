@@ -199,36 +199,17 @@ export const createCheckoutSession = action({
       stripeCustomerId = newCustomer.id;
     }
 
-    // 4. Check if customer has had previous subscriptions (to disable trial for personal plan)
-    const previousSubscriptions = await stripe.subscriptions.list({
-      customer: stripeCustomerId,
-      status: 'all',
-      limit: 10, // Get enough to check history
-    });
-    const hasPreviousSubscription = previousSubscriptions.data.length > 0;
-
-    // Check if any previous subscription had a trial (to prevent giving another trial)
-    const hasUsedTrial = previousSubscriptions.data.some((sub) => sub.trial_start !== null && sub.trial_end !== null);
-
-    // 5. Determine the new tier from the price ID
+    // 4. Determine the new tier from the price ID
     const newTier = getTierFromPriceId(args.priceId);
-    const isPersonalPlan = newTier === 'personal';
 
-    // 6. Check for active subscription and handle upgrade with prorated refund
+    // 5. Check for active subscription and handle upgrade with prorated refund
     const activeSubscriptions = await stripe.subscriptions.list({
       customer: stripeCustomerId,
       status: 'active',
       limit: 1,
     });
 
-    // Also check for trialing subscriptions
-    const trialingSubscriptions = await stripe.subscriptions.list({
-      customer: stripeCustomerId,
-      status: 'trialing',
-      limit: 1,
-    });
-
-    const currentSubscription = activeSubscriptions.data[0] || trialingSubscriptions.data[0];
+    const currentSubscription = activeSubscriptions.data[0];
 
     if (currentSubscription) {
       const currentPriceId = currentSubscription.items.data[0]?.price.id;
@@ -431,10 +412,7 @@ export const createCheckoutSession = action({
       }
     }
 
-    // 7. Create checkout session with the customer
-    // If customer has had previous subscriptions (especially with trials), disable trial for personal plan
-    const shouldDisableTrial = isPersonalPlan && (hasPreviousSubscription || hasUsedTrial);
-
+    // 6. Create checkout session with the customer
     const checkout = await stripe.checkout.sessions.create({
       customer: stripeCustomerId,
       mode: 'subscription',
@@ -450,25 +428,13 @@ export const createCheckoutSession = action({
         metadata: {
           organizationId: args.organizationId,
         },
-        // Explicitly disable trial if customer has had previous subscriptions
-        ...(shouldDisableTrial && { trial_period_days: 0 }),
       },
       metadata: {
         organizationId: args.organizationId,
-        hasPreviousSubscription: hasPreviousSubscription.toString(),
-        hasUsedTrial: hasUsedTrial.toString(),
-        isPersonalPlan: isPersonalPlan.toString(),
-        trialDisabled: shouldDisableTrial.toString(),
         upgradeFrom: currentSubscription ? getTierFromPriceId(currentSubscription.items.data[0]?.price.id || '') : '',
         upgradeTo: newTier,
       },
     });
-
-    if (shouldDisableTrial) {
-      console.log(
-        `[Stripe] Disabling trial for customer ${stripeCustomerId} - hasPreviousSubscription: ${hasPreviousSubscription}, hasUsedTrial: ${hasUsedTrial}`,
-      );
-    }
 
     if (!checkout.url) {
       throw new Error('Failed to create checkout session');
@@ -570,8 +536,6 @@ export const syncStripeDataForCustomer = internalAction({
           currentPeriodEnd: subscription.items.data[0].current_period_end,
           cancelAtPeriodEnd: willCancel, // Use combined check for both cancellation methods
           cancelAt: subscription.cancel_at ?? undefined, // Pass the actual cancel timestamp
-          trialStart: subscription.trial_start ?? undefined, // Trial start timestamp (seconds)
-          trialEnd: subscription.trial_end ?? undefined, // Trial end timestamp (seconds)
           paymentMethodBrand,
           paymentMethodLast4,
         };
@@ -784,9 +748,9 @@ export const cancelAllSubscriptionsForOrganization = internalAction({
         status: 'all',
       });
 
-      // Cancel any active or trialing subscriptions
+      // Cancel any active subscriptions
       for (const subscription of subscriptions.data) {
-        if (['active', 'trialing', 'past_due', 'unpaid'].includes(subscription.status)) {
+        if (['active', 'past_due', 'unpaid'].includes(subscription.status)) {
           try {
             await stripe.subscriptions.cancel(subscription.id, {
               prorate: true,
@@ -1001,7 +965,6 @@ export const getBillingHistory = action({
           'customer.subscription.deleted',
           'customer.subscription.paused',
           'customer.subscription.resumed',
-          'customer.subscription.trial_will_end',
         ],
         limit: 20,
       });
@@ -1030,10 +993,6 @@ export const getBillingHistory = action({
               break;
             case 'customer.subscription.resumed':
               description = 'Subscription resumed';
-              break;
-            case 'customer.subscription.trial_will_end':
-              description = 'Trial ending soon';
-              status = 'warning';
               break;
           }
 

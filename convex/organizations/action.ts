@@ -3,13 +3,14 @@
 import { ConvexError, v } from 'convex/values';
 import { protectedAction } from '../functions';
 import { WorkOS } from '@workos-inc/node';
-import { stripe, TRIAL_PERIOD_DAYS } from '../billing/stripe';
-import { api, internal } from '../_generated/api';
+import { stripe } from '../billing/stripe';
+import { internal } from '../_generated/api';
 import type { Id } from '../_generated/dataModel';
 
 /**
  * Create a new organization in WorkOS with Stripe billing integration.
- * Organizations require a paid subscription (Pro or Enterprise).
+ * Organizations require a paid subscription (Personal, Pro, or Enterprise).
+ * All plans come with a 30-day money-back guarantee.
  * Following the WorkOS Stripe Connect pattern:
  * https://workos.com/docs/authkit/add-ons/stripe/connect-to-stripe
  *
@@ -21,13 +22,13 @@ import type { Id } from '../_generated/dataModel';
  * 5. Store the Stripe customer binding in Convex
  * 6. Add the current user as owner in WorkOS
  * 7. Optimistically insert membership into Convex
- * 8. Create Stripe checkout session for subscription (or trial for personal tier)
+ * 8. Create Stripe checkout session for subscription
  *
  * Note: Tier is NOT stored in WorkOS metadata. It comes from organizationSubscriptions table.
  *
  * @param name - Organization name
  * @param priceId - Stripe price ID to subscribe to
- * @param tier - Subscription tier (personal/pro/enterprise) - used to determine trial eligibility
+ * @param tier - Subscription tier (personal/pro/enterprise)
  * @param successUrl - Redirect URL after successful checkout
  * @param cancelUrl - Redirect URL if checkout cancelled
  */
@@ -41,19 +42,6 @@ export const create = protectedAction({
   },
   async handler(ctx, { name, priceId, tier, successUrl, cancelUrl }) {
     const workos = new WorkOS(process.env.WORKOS_API_KEY);
-
-    // Check if user already has a personal trial (only one allowed per user)
-    let forceCheckout = false;
-    if (tier === 'personal') {
-      const trialCheck = await ctx.runQuery(api.billing.query.hasPersonalTrial);
-      if (trialCheck.hasExistingTrial) {
-        console.log(
-          `[Organization] User already has personal trial with "${trialCheck.organizationName}". ` +
-            `Requiring payment for additional personal org.`,
-        );
-        forceCheckout = true;
-      }
-    }
 
     // 1. Create organization in WorkOS with tier metadata
     const organization = await workos.organizations.createOrganization({
@@ -123,97 +111,51 @@ export const create = protectedAction({
     });
     console.log(`[Convex] Optimistically inserted membership for user ${ctx.user.externalId}`);
 
-    // 8. Handle subscription based on tier
-    // Personal tier gets a free trial without checkout (unless user already has one)
-    // Pro/Enterprise require immediate checkout
-    const isEligibleForTrial = tier === 'personal' && !forceCheckout;
-
-    if (isEligibleForTrial) {
-      // PERSONAL TIER (FIRST ONE): Create subscription with trial directly (no checkout needed)
-      // This allows users to start using the app immediately without payment
-      const subscription = await stripe.subscriptions.create({
-        customer: stripeCustomer.id,
-        items: [{ price: priceId }],
-        trial_period_days: TRIAL_PERIOD_DAYS,
+    // 8. Create Stripe checkout session for subscription
+    // All plans require payment upfront with a 30-day money-back guarantee
+    const checkout = await stripe.checkout.sessions.create({
+      customer: stripeCustomer.id,
+      mode: 'subscription',
+      line_items: [
+        {
+          price: priceId,
+          quantity: 1,
+        },
+      ],
+      success_url: successUrl,
+      cancel_url: cancelUrl,
+      subscription_data: {
         metadata: {
           workosOrganizationId: organization.id,
         },
-        // Trial subscriptions don't need payment upfront
-        // When trial ends, Stripe will attempt to charge the default payment method
-        payment_settings: {
-          save_default_payment_method: 'on_subscription',
-        },
-        trial_settings: {
-          end_behavior: {
-            missing_payment_method: 'pause',
-          },
-        },
-      });
-
-      console.log(
-        `[Stripe] Created trial subscription ${subscription.id} for organization ${organization.name} (${TRIAL_PERIOD_DAYS}-day trial)`,
-      );
-
-      // Note: The Stripe webhook will handle syncing the subscription to Convex
-      // No need to store pending checkout since there's no checkout
-
-      return {
+      },
+      metadata: {
         workosOrganizationId: organization.id,
         convexOrganizationId: convexOrgId,
-        name: organization.name,
-        stripeCustomerId: stripeCustomer.id,
-        subscriptionId: subscription.id,
-        checkoutSessionId: null,
-        checkoutUrl: null, // No checkout needed for trial
-      };
-    } else {
-      // PRO/ENTERPRISE or ADDITIONAL PERSONAL: Create checkout session for payment
-      // (Additional personal orgs don't get free trial - only the first one does)
-      const checkout = await stripe.checkout.sessions.create({
-        customer: stripeCustomer.id,
-        mode: 'subscription',
-        line_items: [
-          {
-            price: priceId,
-            quantity: 1,
-          },
-        ],
-        success_url: successUrl,
-        cancel_url: cancelUrl,
-        subscription_data: {
-          metadata: {
-            workosOrganizationId: organization.id,
-          },
-        },
-        metadata: {
-          workosOrganizationId: organization.id,
-          convexOrganizationId: convexOrgId,
-        },
-        // Checkout session expires after 24 hours by default
-        expires_at: Math.floor(Date.now() / 1000) + 60 * 60 * 24, // 24 hours
-      });
+      },
+      // Checkout session expires after 24 hours by default
+      expires_at: Math.floor(Date.now() / 1000) + 60 * 60 * 24, // 24 hours
+    });
 
-      console.log(`[Stripe] Created checkout session ${checkout.id} for organization ${organization.name}`);
+    console.log(`[Stripe] Created checkout session ${checkout.id} for organization ${organization.name}`);
 
-      // Store pending checkout state so we can track/recover abandoned checkouts
-      await ctx.runMutation(internal.billing.internal.mutation.createPendingSubscription, {
-        organizationId: convexOrgId,
-        stripeCustomerId: stripeCustomer.id,
-        checkoutSessionId: checkout.id,
-        priceId,
-      });
-      console.log(`[Convex] Stored pending checkout for organization ${convexOrgId}`);
+    // Store pending checkout state so we can track/recover abandoned checkouts
+    await ctx.runMutation(internal.billing.internal.mutation.createPendingSubscription, {
+      organizationId: convexOrgId,
+      stripeCustomerId: stripeCustomer.id,
+      checkoutSessionId: checkout.id,
+      priceId,
+    });
+    console.log(`[Convex] Stored pending checkout for organization ${convexOrgId}`);
 
-      return {
-        workosOrganizationId: organization.id,
-        convexOrganizationId: convexOrgId,
-        name: organization.name,
-        stripeCustomerId: stripeCustomer.id,
-        subscriptionId: null,
-        checkoutSessionId: checkout.id,
-        checkoutUrl: checkout.url,
-      };
-    }
+    return {
+      workosOrganizationId: organization.id,
+      convexOrganizationId: convexOrgId,
+      name: organization.name,
+      stripeCustomerId: stripeCustomer.id,
+      checkoutSessionId: checkout.id,
+      checkoutUrl: checkout.url,
+    };
   },
 });
 

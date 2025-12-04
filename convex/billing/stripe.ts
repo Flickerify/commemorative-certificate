@@ -16,7 +16,7 @@ export const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
  * These should be set in your environment variables.
  */
 export const STRIPE_PRICE_IDS = {
-  // Personal tier - 14-day free trial, then paid
+  // Personal tier
   personalMonthly: process.env.STRIPE_PRICE_PERSONAL_MONTHLY ?? '',
   personalYearly: process.env.STRIPE_PRICE_PERSONAL_YEARLY ?? '',
   // Pro tier
@@ -28,16 +28,10 @@ export const STRIPE_PRICE_IDS = {
 } as const;
 
 /**
- * Trial period for personal tier (in days).
+ * Money-back guarantee period (days).
+ * All plans come with a 30-day money-back guarantee.
  */
-export const TRIAL_PERIOD_DAYS = 14;
-
-/**
- * Check if a price ID is for the Personal tier (eligible for trial).
- */
-export function isPersonalTierPrice(priceId: string): boolean {
-  return priceId === STRIPE_PRICE_IDS.personalMonthly || priceId === STRIPE_PRICE_IDS.personalYearly;
-}
+export const MONEY_BACK_GUARANTEE_DAYS = 30;
 
 /**
  * Get tier from Stripe price ID.
@@ -118,7 +112,6 @@ export const STRIPE_WEBHOOK_EVENTS: Stripe.Event.Type[] = [
   'customer.subscription.resumed',
   'customer.subscription.pending_update_applied',
   'customer.subscription.pending_update_expired',
-  'customer.subscription.trial_will_end',
   'invoice.paid',
   'invoice.payment_failed',
   'invoice.payment_action_required',
