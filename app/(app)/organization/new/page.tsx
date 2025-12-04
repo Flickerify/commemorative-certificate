@@ -274,7 +274,7 @@ export default function NewOrganizationPage() {
             <div className="flex items-center justify-center gap-2 text-sm text-muted-foreground">
               <Shield className="h-4 w-4 text-emerald-500" />
               <span>All plans include a 30-day money-back guarantee</span>
-            </div>
+              </div>
 
             {/* Billing toggle */}
             <div className="flex items-center justify-center gap-3">

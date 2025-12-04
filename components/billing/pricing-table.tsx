@@ -214,10 +214,10 @@ export function PricingTable({
                 {/* Features */}
                 <ul className="space-y-2">
                   {features.map((feature) => (
-                    <li key={feature} className="flex items-start gap-2 text-sm">
-                      <IconCheck className="h-4 w-4 text-emerald-500 mt-0.5 shrink-0" />
-                      <span>{feature}</span>
-                    </li>
+                      <li key={feature} className="flex items-start gap-2 text-sm">
+                            <IconCheck className="h-4 w-4 text-emerald-500 mt-0.5 shrink-0" />
+                            <span>{feature}</span>
+                      </li>
                   ))}
                 </ul>
               </CardContent>
@@ -233,6 +233,7 @@ export function PricingTable({
                     <CheckoutButton
                       organizationId={organizationId}
                       priceId={priceId}
+                      hasActiveSubscription={!!currentTier && !hasCanceledSubscription}
                       variant={isIntervalDowngrade ? 'outline' : 'default'}
                       className="w-full"
                     >
@@ -248,6 +249,7 @@ export function PricingTable({
                   <CheckoutButton
                     organizationId={organizationId}
                     priceId={priceId}
+                    hasActiveSubscription={!!currentTier && !hasCanceledSubscription}
                     variant={isDowngrade ? 'outline' : plan.popular ? undefined : 'outline'}
                     className="w-full"
                   >

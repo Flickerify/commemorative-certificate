@@ -113,49 +113,49 @@ export const create = protectedAction({
 
     // 8. Create Stripe checkout session for subscription
     // All plans require payment upfront with a 30-day money-back guarantee
-    const checkout = await stripe.checkout.sessions.create({
-      customer: stripeCustomer.id,
-      mode: 'subscription',
-      line_items: [
-        {
-          price: priceId,
-          quantity: 1,
+      const checkout = await stripe.checkout.sessions.create({
+        customer: stripeCustomer.id,
+        mode: 'subscription',
+        line_items: [
+          {
+            price: priceId,
+            quantity: 1,
+          },
+        ],
+        success_url: successUrl,
+        cancel_url: cancelUrl,
+        subscription_data: {
+          metadata: {
+            workosOrganizationId: organization.id,
+          },
         },
-      ],
-      success_url: successUrl,
-      cancel_url: cancelUrl,
-      subscription_data: {
         metadata: {
           workosOrganizationId: organization.id,
+          convexOrganizationId: convexOrgId,
         },
-      },
-      metadata: {
+        // Checkout session expires after 24 hours by default
+        expires_at: Math.floor(Date.now() / 1000) + 60 * 60 * 24, // 24 hours
+      });
+
+      console.log(`[Stripe] Created checkout session ${checkout.id} for organization ${organization.name}`);
+
+      // Store pending checkout state so we can track/recover abandoned checkouts
+      await ctx.runMutation(internal.billing.internal.mutation.createPendingSubscription, {
+        organizationId: convexOrgId,
+        stripeCustomerId: stripeCustomer.id,
+        checkoutSessionId: checkout.id,
+        priceId,
+      });
+      console.log(`[Convex] Stored pending checkout for organization ${convexOrgId}`);
+
+      return {
         workosOrganizationId: organization.id,
         convexOrganizationId: convexOrgId,
-      },
-      // Checkout session expires after 24 hours by default
-      expires_at: Math.floor(Date.now() / 1000) + 60 * 60 * 24, // 24 hours
-    });
-
-    console.log(`[Stripe] Created checkout session ${checkout.id} for organization ${organization.name}`);
-
-    // Store pending checkout state so we can track/recover abandoned checkouts
-    await ctx.runMutation(internal.billing.internal.mutation.createPendingSubscription, {
-      organizationId: convexOrgId,
-      stripeCustomerId: stripeCustomer.id,
-      checkoutSessionId: checkout.id,
-      priceId,
-    });
-    console.log(`[Convex] Stored pending checkout for organization ${convexOrgId}`);
-
-    return {
-      workosOrganizationId: organization.id,
-      convexOrganizationId: convexOrgId,
-      name: organization.name,
-      stripeCustomerId: stripeCustomer.id,
-      checkoutSessionId: checkout.id,
-      checkoutUrl: checkout.url,
-    };
+        name: organization.name,
+        stripeCustomerId: stripeCustomer.id,
+        checkoutSessionId: checkout.id,
+        checkoutUrl: checkout.url,
+      };
   },
 });
 

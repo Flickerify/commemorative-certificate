@@ -11,6 +11,17 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Button } from '@/components/ui/button';
 import { BillingPortalButton } from './billing-portal-button';
 import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from '@/components/ui/dialog';
+import { Textarea } from '@/components/ui/textarea';
+import { Label } from '@/components/ui/label';
+import {
   IconCrown,
   IconBuilding,
   IconUser,
@@ -22,6 +33,7 @@ import {
   IconCreditCard,
   IconRefresh,
   IconShieldCheck,
+  IconCash,
 } from '@tabler/icons-react';
 import { toast } from 'sonner';
 
@@ -139,12 +151,13 @@ export function SubscriptionCard({ organizationId }: SubscriptionCardProps) {
               <div className="rounded-full bg-emerald-500/20 p-2">
                 <IconShieldCheck className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
               </div>
-              <div className="flex-1 space-y-1">
+              <div className="flex-1 space-y-2">
                 <p className="font-medium text-emerald-700 dark:text-emerald-300">30-day money-back guarantee</p>
                 <p className="text-sm text-emerald-600/80 dark:text-emerald-400/80">
                   {subscription.guaranteeDaysRemaining} day{subscription.guaranteeDaysRemaining === 1 ? '' : 's'}{' '}
                   remaining to request a full refund if you&apos;re not satisfied.
                 </p>
+                <MoneyBackRefundButton organizationId={organizationId} />
               </div>
             </div>
           </div>
@@ -443,4 +456,201 @@ function formatFeatureName(feature: string): string {
     .split('_')
     .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
     .join(' ');
+}
+
+// ============================================================
+// MONEY-BACK GUARANTEE REFUND BUTTON
+// ============================================================
+
+interface MoneyBackRefundButtonProps {
+  organizationId: Id<'organizations'>;
+}
+
+function MoneyBackRefundButton({ organizationId }: MoneyBackRefundButtonProps) {
+  const [isOpen, setIsOpen] = useState(false);
+  const [isCheckingEligibility, setIsCheckingEligibility] = useState(false);
+  const [isProcessingRefund, setIsProcessingRefund] = useState(false);
+  const [reason, setReason] = useState('');
+  const [eligibility, setEligibility] = useState<{
+    eligible: boolean;
+    reason: string;
+    daysRemaining?: number;
+    refundableAmount?: number;
+    currency?: string;
+  } | null>(null);
+
+  const checkEligibility = useAction(api.billing.action.checkRefundEligibility);
+  const requestRefund = useAction(api.billing.action.requestMoneyBackRefund);
+
+  const handleOpenChange = async (open: boolean) => {
+    setIsOpen(open);
+    if (open && !eligibility) {
+      // Check eligibility when dialog opens
+      setIsCheckingEligibility(true);
+      try {
+        const result = await checkEligibility({ organizationId });
+        setEligibility(result);
+      } catch (error) {
+        console.error('Failed to check eligibility:', error);
+        toast.error('Failed to check refund eligibility');
+      } finally {
+        setIsCheckingEligibility(false);
+      }
+    }
+  };
+
+  const handleRequestRefund = async () => {
+    setIsProcessingRefund(true);
+    try {
+      const result = await requestRefund({
+        organizationId,
+        reason: reason || undefined,
+      });
+
+      if (result.success) {
+        toast.success('Refund processed successfully', {
+          description: result.message,
+        });
+        setIsOpen(false);
+        // Refresh the page to show updated subscription status
+        window.location.reload();
+      } else {
+        toast.error('Refund failed', {
+          description: result.message,
+        });
+      }
+    } catch (error) {
+      console.error('Failed to process refund:', error);
+      toast.error('Failed to process refund', {
+        description: error instanceof Error ? error.message : 'Please try again or contact support',
+      });
+    } finally {
+      setIsProcessingRefund(false);
+    }
+  };
+
+  const formatCurrency = (amount: number, currency: string) => {
+    return new Intl.NumberFormat('en-US', {
+      style: 'currency',
+      currency: currency.toUpperCase(),
+    }).format(amount / 100);
+  };
+
+  return (
+    <Dialog open={isOpen} onOpenChange={handleOpenChange}>
+      <DialogTrigger asChild>
+        <Button
+          variant="outline"
+          size="sm"
+          className="border-emerald-500/50 text-emerald-700 hover:bg-emerald-500/10 dark:text-emerald-400"
+        >
+          <IconCash className="mr-2 h-4 w-4" />
+          Request Refund
+        </Button>
+      </DialogTrigger>
+      <DialogContent className="sm:max-w-[425px]">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <IconShieldCheck className="h-5 w-5 text-emerald-500" />
+            30-Day Money-Back Guarantee
+          </DialogTitle>
+          <DialogDescription>
+            Request a full refund within 30 days of your first payment if you&apos;re not satisfied.
+          </DialogDescription>
+        </DialogHeader>
+
+        {isCheckingEligibility ? (
+          <div className="flex items-center justify-center py-8">
+            <IconLoader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+          </div>
+        ) : eligibility ? (
+          <div className="space-y-4 py-4">
+            {eligibility.eligible ? (
+              <>
+                {/* Eligible for refund */}
+                <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 p-4">
+                  <div className="flex items-center gap-2 mb-2">
+                    <IconCheck className="h-5 w-5 text-emerald-500" />
+                    <span className="font-medium text-emerald-700 dark:text-emerald-300">Eligible for refund</span>
+                  </div>
+                  <p className="text-sm text-muted-foreground">{eligibility.reason}</p>
+                </div>
+
+                {/* Refund amount */}
+                {eligibility.refundableAmount && eligibility.currency && (
+                  <div className="rounded-lg bg-muted p-4">
+                    <div className="text-sm text-muted-foreground mb-1">Refund amount</div>
+                    <div className="text-2xl font-bold">
+                      {formatCurrency(eligibility.refundableAmount, eligibility.currency)}
+                    </div>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      This amount will be refunded to your original payment method.
+                    </p>
+                  </div>
+                )}
+
+                {/* Feedback (optional) */}
+                <div className="space-y-2">
+                  <Label htmlFor="reason">Why are you requesting a refund? (optional)</Label>
+                  <Textarea
+                    id="reason"
+                    placeholder="Help us improve by sharing your feedback…"
+                    value={reason}
+                    onChange={(e) => setReason(e.target.value)}
+                    className="resize-none"
+                    rows={3}
+                  />
+                </div>
+
+                {/* Warning */}
+                <div className="flex items-start gap-2 rounded-lg bg-amber-500/10 p-3 text-sm">
+                  <IconAlertTriangle className="h-4 w-4 shrink-0 text-amber-500 mt-0.5" />
+                  <div>
+                    <span className="font-medium text-amber-600 dark:text-amber-400">Important:</span>{' '}
+                    <span className="text-muted-foreground">
+                      This will cancel your subscription immediately and you will lose access to all paid features.
+                    </span>
+                  </div>
+                </div>
+              </>
+            ) : (
+              /* Not eligible */
+              <div className="rounded-lg border border-red-500/30 bg-red-500/10 p-4">
+                <div className="flex items-center gap-2 mb-2">
+                  <IconAlertTriangle className="h-5 w-5 text-red-500" />
+                  <span className="font-medium text-red-700 dark:text-red-300">Not eligible for refund</span>
+                </div>
+                <p className="text-sm text-muted-foreground">{eligibility.reason}</p>
+              </div>
+            )}
+          </div>
+        ) : null}
+
+        <DialogFooter>
+          <Button variant="outline" onClick={() => setIsOpen(false)}>
+            Cancel
+          </Button>
+          {eligibility?.eligible && (
+            <Button
+              variant="destructive"
+              onClick={handleRequestRefund}
+              disabled={isProcessingRefund}
+            >
+              {isProcessingRefund ? (
+                <>
+                  <IconLoader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Processing…
+                </>
+              ) : (
+                <>
+                  <IconCash className="mr-2 h-4 w-4" />
+                  Confirm Refund
+                </>
+              )}
+            </Button>
+          )}
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
 }

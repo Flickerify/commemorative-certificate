@@ -1,4 +1,6 @@
 import { v } from 'convex/values';
+import { ConvexError } from 'convex/values';
+import { WorkOS } from '@workos-inc/node';
 import { protectedAction } from '../functions';
 import { languageValidator, Metadata } from '../schema';
 import { internal } from '../_generated/api';
@@ -110,5 +112,77 @@ export const updateProfile = protectedAction({
     });
 
     return { success: true };
+  },
+});
+
+/**
+ * Check if user account can be deleted.
+ * User cannot delete their account if they own organizations with active subscriptions.
+ */
+export const canDeleteAccount = protectedAction({
+  args: {},
+  returns: v.object({
+    canDelete: v.boolean(),
+    reason: v.optional(v.string()),
+    organizationsWithActiveSubscriptions: v.array(v.string()),
+  }),
+  async handler(ctx): Promise<{
+    canDelete: boolean;
+    reason?: string;
+    organizationsWithActiveSubscriptions: string[];
+  }> {
+    const result = await ctx.runQuery(internal.users.internal.query.canDeleteAccountCheck, {
+      userExternalId: ctx.user.externalId,
+    });
+
+    return {
+      canDelete: result.canDelete,
+      reason: result.reason,
+      organizationsWithActiveSubscriptions: result.organizationsWithActiveSubscriptions,
+    };
+  },
+});
+
+/**
+ * Delete user account.
+ * This will:
+ * 1. Check if user can be deleted (no owned orgs with active subscriptions)
+ * 2. Delete all organizations owned by the user
+ * 3. Delete the user from WorkOS (triggers webhook to delete from Convex)
+ */
+export const deleteAccount = protectedAction({
+  args: {},
+  returns: v.object({
+    success: v.boolean(),
+    message: v.string(),
+  }),
+  async handler(ctx) {
+    // Check if account can be deleted
+    const deletionCheck = await ctx.runQuery(internal.users.internal.query.canDeleteAccountCheck, {
+      userExternalId: ctx.user.externalId,
+    });
+
+    if (!deletionCheck.canDelete) {
+      throw new ConvexError(deletionCheck.reason || 'Cannot delete account with active subscriptions');
+    }
+
+    const workos = new WorkOS(process.env.WORKOS_API_KEY);
+
+    await ctx.runAction(internal.workos.internal.action.revokeAllUserSessions, {
+      workosUserId: ctx.user.externalId,
+    });
+
+    // Delete the user from WorkOS
+    // This will trigger the user.deleted webhook which handles:
+    // - Revoking all sessions
+    // - Deleting from Convex and PlanetScale
+    await workos.userManagement.deleteUser(ctx.user.externalId);
+
+    console.log(`[WorkOS] Deleted user ${ctx.user.email} (${ctx.user.externalId})`);
+
+    return {
+      success: true,
+      message: 'Account deleted successfully',
+    };
   },
 });

@@ -14,6 +14,9 @@ import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { ScrollArea } from '@/components/ui/scroll-area';
 import {
   IconCreditCard,
   IconReceipt,
@@ -31,8 +34,12 @@ import {
   IconPlayerPause,
   IconArrowUp,
   IconArrowDown,
+  IconCurrencyDollar,
+  IconRotateClockwise,
+  IconCalendar,
 } from '@tabler/icons-react';
 import type { Id } from '@/convex/_generated/dataModel';
+import { cn } from '@/lib/utils';
 
 export default function BillingPage() {
   const searchParams = useSearchParams();
@@ -59,22 +66,64 @@ export default function BillingPage() {
 
   // Actions
   const syncAfterCheckout = useAction(api.billing.action.syncAfterCheckout);
-  const getBillingHistory = useAction(api.billing.action.getBillingHistory);
+  const getCompleteBillingData = useAction(api.billing.action.getCompleteBillingData);
 
-  // State for billing history
-  const [billingHistory, setBillingHistory] = useState<
-    Array<{
+  // State for comprehensive billing data
+  type BillingData = {
+    invoices: Array<{
+      id: string;
+      number: string | null;
+      status: string;
+      billingReason: string;
+      amountDue: number;
+      amountPaid: number;
+      amountRemaining: number;
+      currency: string;
+      created: number;
+      periodStart: number;
+      periodEnd: number;
+      hostedInvoiceUrl: string | null;
+      invoicePdf: string | null;
+      subscriptionId: string | null;
+      planName: string | null;
+      lineItems: Array<{ description: string; amount: number; quantity: number }>;
+    }>;
+    refunds: Array<{
+      id: string;
+      amount: number;
+      currency: string;
+      status: string;
+      reason: string | null;
+      created: number;
+      invoiceId: string | null;
+      metadata: Record<string, string>;
+    }>;
+    subscriptions: Array<{
+      id: string;
+      status: string;
+      planName: string;
+      tier: string;
+      interval: string;
+      amount: number;
+      currency: string;
+      currentPeriodStart: number;
+      currentPeriodEnd: number;
+      cancelAtPeriodEnd: boolean;
+      canceledAt: number | null;
+      endedAt: number | null;
+      created: number;
+    }>;
+    activity: Array<{
       id: string;
       type: string;
       description: string;
-      amount?: number;
-      currency?: string;
+      details: string | null;
       status: string;
       created: number;
-      invoiceUrl?: string;
-      invoicePdf?: string;
-    }>
-  >([]);
+    }>;
+  };
+
+  const [billingData, setBillingData] = useState<BillingData | null>(null);
 
   // Check for success/canceled params and sync
   useEffect(() => {
@@ -98,21 +147,21 @@ export default function BillingPage() {
     }
   }, [searchParams, currentOrg?._id, syncAfterCheckout]);
 
-  // Load billing history when tab changes
+  // Load billing data when tab changes
   useEffect(() => {
-    if (activeTab === 'history' && currentOrg?._id && billingHistory.length === 0) {
+    if (activeTab === 'history' && currentOrg?._id && !billingData) {
       setIsLoadingHistory(true);
-      getBillingHistory({ organizationId: currentOrg._id as Id<'organizations'>, limit: 30 })
-        .then(setBillingHistory)
+      getCompleteBillingData({ organizationId: currentOrg._id as Id<'organizations'> })
+        .then(setBillingData)
         .finally(() => setIsLoadingHistory(false));
     }
-  }, [activeTab, currentOrg?._id, getBillingHistory, billingHistory.length]);
+  }, [activeTab, currentOrg?._id, getCompleteBillingData, billingData]);
 
   const refreshHistory = () => {
     if (currentOrg?._id) {
       setIsLoadingHistory(true);
-      getBillingHistory({ organizationId: currentOrg._id as Id<'organizations'>, limit: 30 })
-        .then(setBillingHistory)
+      getCompleteBillingData({ organizationId: currentOrg._id as Id<'organizations'> })
+        .then(setBillingData)
         .finally(() => setIsLoadingHistory(false));
     }
   };
@@ -322,42 +371,287 @@ export default function BillingPage() {
               </div>
             </TabsContent>
 
-            {/* History Tab (Redesigned) */}
+            {/* History Tab (Comprehensive Redesign) */}
             <TabsContent value="history" className="space-y-6">
-              <div className="rounded-xl border border-border bg-card p-6">
-                <div className="flex items-center justify-between mb-6">
-                  <div>
-                    <h3 className="font-semibold">Billing History</h3>
-                    <p className="text-sm text-muted-foreground mt-1">View your invoices and subscription events</p>
-                  </div>
-                  <Button variant="outline" size="sm" onClick={refreshHistory} disabled={isLoadingHistory}>
-                    <IconRefresh className={`h-4 w-4 mr-2 ${isLoadingHistory ? 'animate-spin' : ''}`} />
-                    Refresh
-                  </Button>
+              {/* Header with refresh */}
+              <div className="flex items-center justify-between">
+                <div>
+                  <h3 className="text-lg font-semibold">Billing History</h3>
+                  <p className="text-sm text-muted-foreground">
+                    View invoices, refunds, subscriptions, and account activity
+                  </p>
                 </div>
-
-                {isLoadingHistory ? (
-                  <div className="space-y-3">
-                    {[1, 2, 3, 4, 5].map((i) => (
-                      <Skeleton key={i} className="h-20 w-full" />
-                    ))}
-                  </div>
-                ) : billingHistory.length === 0 ? (
-                  <div className="text-center py-12">
-                    <IconFileInvoice className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
-                    <p className="text-muted-foreground">No billing history found.</p>
-                    <p className="text-sm text-muted-foreground mt-1">
-                      Your invoices and subscription events will appear here.
-                    </p>
-                  </div>
-                ) : (
-                  <div className="space-y-3">
-                    {billingHistory.map((event) => (
-                      <BillingHistoryItem key={event.id} event={event} />
-                    ))}
-                  </div>
-                )}
+                <Button variant="outline" size="sm" onClick={refreshHistory} disabled={isLoadingHistory}>
+                  <IconRefresh className={cn('h-4 w-4 mr-2', isLoadingHistory && 'animate-spin')} />
+                  Refresh
+                </Button>
               </div>
+
+              {isLoadingHistory ? (
+                <div className="space-y-6">
+                  <Skeleton className="h-64 w-full rounded-xl" />
+                  <div className="grid gap-6 md:grid-cols-2">
+                    <Skeleton className="h-48 rounded-xl" />
+                    <Skeleton className="h-48 rounded-xl" />
+                  </div>
+                </div>
+              ) : !billingData || (billingData.invoices.length === 0 && billingData.subscriptions.length === 0) ? (
+                <div className="rounded-xl border border-border bg-card p-12 text-center">
+                  <IconFileInvoice className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
+                  <p className="text-muted-foreground">No billing history found.</p>
+                  <p className="text-sm text-muted-foreground mt-1">
+                    Your invoices and subscription events will appear here.
+                  </p>
+                </div>
+              ) : (
+                <div className="space-y-6">
+                  {/* Invoices Table */}
+                  <Card>
+                    <CardHeader>
+                      <CardTitle className="flex items-center gap-2">
+                        <IconFileInvoice className="h-5 w-5" />
+                        Invoices
+                      </CardTitle>
+                      <CardDescription>All invoices and payment records</CardDescription>
+                    </CardHeader>
+                    <CardContent>
+                      {billingData.invoices.length === 0 ? (
+                        <p className="text-sm text-muted-foreground text-center py-8">No invoices yet</p>
+                      ) : (
+                        <div className="rounded-md border">
+                          <Table>
+                            <TableHeader>
+                              <TableRow>
+                                <TableHead>Invoice</TableHead>
+                                <TableHead>Date</TableHead>
+                                <TableHead>Description</TableHead>
+                                <TableHead>Status</TableHead>
+                                <TableHead className="text-right">Amount</TableHead>
+                                <TableHead className="w-[100px]">Actions</TableHead>
+                              </TableRow>
+                            </TableHeader>
+                            <TableBody>
+                              {billingData.invoices.map((invoice) => (
+                                <TableRow key={invoice.id}>
+                                  <TableCell className="font-mono text-sm">
+                                    {invoice.number || invoice.id.slice(0, 8)}
+                                  </TableCell>
+                                  <TableCell>{new Date(invoice.created).toLocaleDateString()}</TableCell>
+                                  <TableCell>
+                                    <div>
+                                      <span className="font-medium">
+                                        {getBillingReasonLabel(invoice.billingReason)}
+                                      </span>
+                                      {invoice.planName && (
+                                        <span className="text-muted-foreground ml-1">• {invoice.planName}</span>
+                                      )}
+                                    </div>
+                                    {invoice.lineItems.length > 1 && (
+                                      <span className="text-xs text-muted-foreground">
+                                        {invoice.lineItems.length} items
+                                      </span>
+                                    )}
+                                  </TableCell>
+                                  <TableCell>
+                                    <InvoiceStatusBadge status={invoice.status} />
+                                  </TableCell>
+                                  <TableCell className="text-right font-medium">
+                                    {formatCurrency(invoice.amountPaid, invoice.currency)}
+                                  </TableCell>
+                                  <TableCell>
+                                    <div className="flex items-center gap-1">
+                                      {invoice.hostedInvoiceUrl && (
+                                        <Button variant="ghost" size="icon" className="h-8 w-8" asChild>
+                                          <a href={invoice.hostedInvoiceUrl} target="_blank" rel="noopener noreferrer">
+                                            <IconExternalLink className="h-4 w-4" />
+                                          </a>
+                                        </Button>
+                                      )}
+                                      {invoice.invoicePdf && (
+                                        <Button variant="ghost" size="icon" className="h-8 w-8" asChild>
+                                          <a
+                                            href={invoice.invoicePdf}
+                                            target="_blank"
+                                            rel="noopener noreferrer"
+                                            download
+                                          >
+                                            <IconDownload className="h-4 w-4" />
+                                          </a>
+                                        </Button>
+                                      )}
+                                    </div>
+                                  </TableCell>
+                                </TableRow>
+                              ))}
+                            </TableBody>
+                          </Table>
+                        </div>
+                      )}
+                    </CardContent>
+                  </Card>
+
+                  {/* Refunds & Subscriptions Grid */}
+                  <div className="grid gap-6 md:grid-cols-2">
+                    {/* Refunds Card */}
+                    <Card>
+                      <CardHeader>
+                        <CardTitle className="flex items-center gap-2">
+                          <IconRotateClockwise className="h-5 w-5" />
+                          Refunds
+                        </CardTitle>
+                        <CardDescription>All refunds issued to your account</CardDescription>
+                      </CardHeader>
+                      <CardContent>
+                        {billingData.refunds.length === 0 ? (
+                          <p className="text-sm text-muted-foreground text-center py-8">No refunds</p>
+                        ) : (
+                          <ScrollArea className="h-[200px]">
+                            <div className="space-y-3">
+                              {billingData.refunds.map((refund) => (
+                                <div
+                                  key={refund.id}
+                                  className="flex items-center justify-between p-3 rounded-lg bg-muted/50"
+                                >
+                                  <div>
+                                    <div className="font-medium">{formatCurrency(refund.amount, refund.currency)}</div>
+                                    <div className="text-xs text-muted-foreground">
+                                      {new Date(refund.created).toLocaleDateString()}
+                                      {refund.reason && ` • ${formatRefundReason(refund.reason)}`}
+                                    </div>
+                                    {refund.metadata.type && (
+                                      <Badge variant="outline" className="mt-1 text-xs">
+                                        {refund.metadata.type.replace(/_/g, ' ')}
+                                      </Badge>
+                                    )}
+                                  </div>
+                                  <RefundStatusBadge status={refund.status} />
+                                </div>
+                              ))}
+                            </div>
+                          </ScrollArea>
+                        )}
+                      </CardContent>
+                    </Card>
+
+                    {/* Subscriptions Card */}
+                    <Card>
+                      <CardHeader>
+                        <CardTitle className="flex items-center gap-2">
+                          <IconCreditCard className="h-5 w-5" />
+                          Subscriptions
+                        </CardTitle>
+                        <CardDescription>All past and current subscriptions</CardDescription>
+                      </CardHeader>
+                      <CardContent>
+                        {billingData.subscriptions.length === 0 ? (
+                          <p className="text-sm text-muted-foreground text-center py-8">No subscriptions</p>
+                        ) : (
+                          <ScrollArea className="h-[200px]">
+                            <div className="space-y-3">
+                              {billingData.subscriptions.map((sub) => (
+                                <div
+                                  key={sub.id}
+                                  className={cn(
+                                    'p-3 rounded-lg border',
+                                    sub.status === 'active' ? 'bg-emerald-500/5 border-emerald-500/20' : 'bg-muted/50',
+                                  )}
+                                >
+                                  <div className="flex items-center justify-between mb-2">
+                                    <div className="font-medium capitalize">{sub.tier} Plan</div>
+                                    <SubscriptionStatusBadge
+                                      status={sub.status}
+                                      cancelAtPeriodEnd={sub.cancelAtPeriodEnd}
+                                    />
+                                  </div>
+                                  <div className="text-sm text-muted-foreground space-y-1">
+                                    <div className="flex items-center gap-1">
+                                      <IconCurrencyDollar className="h-3.5 w-3.5" />
+                                      {formatCurrency(sub.amount, sub.currency)}/{sub.interval}
+                                    </div>
+                                    <div className="flex items-center gap-1">
+                                      <IconCalendar className="h-3.5 w-3.5" />
+                                      {sub.status === 'active' || sub.status === 'trialing'
+                                        ? `Renews ${new Date(sub.currentPeriodEnd).toLocaleDateString()}`
+                                        : sub.endedAt
+                                          ? `Ended ${new Date(sub.endedAt).toLocaleDateString()}`
+                                          : `Created ${new Date(sub.created).toLocaleDateString()}`}
+                                    </div>
+                                    {sub.cancelAtPeriodEnd && (
+                                      <div className="text-amber-600 dark:text-amber-400 text-xs">
+                                        Cancels at period end
+                                      </div>
+                                    )}
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          </ScrollArea>
+                        )}
+                      </CardContent>
+                    </Card>
+                  </div>
+
+                  {/* Account Activity Timeline */}
+                  <Card>
+                    <CardHeader>
+                      <CardTitle className="flex items-center gap-2">
+                        <IconClock className="h-5 w-5" />
+                        Account Activity
+                      </CardTitle>
+                      <CardDescription>Recent billing and subscription events</CardDescription>
+                    </CardHeader>
+                    <CardContent>
+                      {billingData.activity.length === 0 ? (
+                        <p className="text-sm text-muted-foreground text-center py-8">No recent activity</p>
+                      ) : (
+                        <ScrollArea className="h-[300px]">
+                          <div className="relative">
+                            {/* Timeline line */}
+                            <div className="absolute left-4 top-0 bottom-0 w-px bg-border" />
+
+                            <div className="space-y-4">
+                              {billingData.activity.map((event) => (
+                                <div key={event.id} className="relative pl-10">
+                                  {/* Timeline dot */}
+                                  <div
+                                    className={cn(
+                                      'absolute left-2.5 w-3 h-3 rounded-full border-2 bg-background',
+                                      getActivityDotColor(event.status),
+                                    )}
+                                  />
+
+                                  <div className="p-3 rounded-lg bg-muted/30 hover:bg-muted/50 transition-colors">
+                                    <div className="flex items-center justify-between mb-1">
+                                      <span className="font-medium">{event.description}</span>
+                                      <ActivityStatusBadge status={event.status} />
+                                    </div>
+                                    <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                                      <span>{new Date(event.created).toLocaleDateString()}</span>
+                                      <span>•</span>
+                                      <span>
+                                        {new Date(event.created).toLocaleTimeString([], {
+                                          hour: '2-digit',
+                                          minute: '2-digit',
+                                        })}
+                                      </span>
+                                      {event.details && (
+                                        <>
+                                          <span>•</span>
+                                          <span>{event.details}</span>
+                                        </>
+                                      )}
+                                    </div>
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        </ScrollArea>
+                      )}
+                    </CardContent>
+                  </Card>
+                </div>
+              )}
             </TabsContent>
           </Tabs>
         ) : isPersonalWorkspace && currentOrg ? (
@@ -386,111 +680,134 @@ export default function BillingPage() {
   );
 }
 
-interface BillingHistoryItemProps {
-  event: {
-    id: string;
-    type: string;
-    description: string;
-    amount?: number;
-    currency?: string;
-    status: string;
-    created: number;
-    invoiceUrl?: string;
-    invoicePdf?: string;
-  };
+// ============================================================
+// HELPER FUNCTIONS
+// ============================================================
+
+function formatCurrency(amount: number, currency: string) {
+  return new Intl.NumberFormat('en-US', {
+    style: 'currency',
+    currency: currency.toUpperCase(),
+  }).format(amount / 100);
 }
 
-function BillingHistoryItem({ event }: BillingHistoryItemProps) {
-  const getIcon = () => {
-    if (event.type === 'invoice') {
-      if (event.status === 'paid') return <IconCheck className="h-4 w-4 text-emerald-500" />;
-      if (event.status === 'open') return <IconClock className="h-4 w-4 text-amber-500" />;
-      if (event.status === 'void' || event.status === 'uncollectible')
-        return <IconX className="h-4 w-4 text-red-500" />;
-      return <IconFileInvoice className="h-4 w-4 text-muted-foreground" />;
-    }
-    // Subscription events
-    if (event.description.includes('created') || event.description.includes('started'))
-      return <IconPlayerPlay className="h-4 w-4 text-emerald-500" />;
-    if (event.description.includes('canceled') || event.description.includes('deleted'))
-      return <IconX className="h-4 w-4 text-red-500" />;
-    if (event.description.includes('paused')) return <IconPlayerPause className="h-4 w-4 text-amber-500" />;
-    if (event.description.includes('resumed')) return <IconPlayerPlay className="h-4 w-4 text-emerald-500" />;
-    if (event.description.includes('updated')) return <IconRefresh className="h-4 w-4 text-blue-500" />;
-    if (event.description.includes('upgrade')) return <IconArrowUp className="h-4 w-4 text-emerald-500" />;
-    if (event.description.includes('downgrade')) return <IconArrowDown className="h-4 w-4 text-amber-500" />;
-    return <IconClock className="h-4 w-4 text-muted-foreground" />;
+function getBillingReasonLabel(reason: string): string {
+  const labels: Record<string, string> = {
+    subscription_create: 'Subscription started',
+    subscription_cycle: 'Subscription renewal',
+    subscription_update: 'Subscription updated',
+    subscription_threshold: 'Usage threshold',
+    manual: 'Manual invoice',
+    upcoming: 'Upcoming invoice',
+    unknown: 'Invoice',
+  };
+  return labels[reason] || reason.replace(/_/g, ' ');
+}
+
+function formatRefundReason(reason: string): string {
+  const labels: Record<string, string> = {
+    duplicate: 'Duplicate charge',
+    fraudulent: 'Fraudulent',
+    requested_by_customer: 'Customer request',
+    expired_uncaptured_charge: 'Expired charge',
+  };
+  return labels[reason] || reason.replace(/_/g, ' ');
+}
+
+function getActivityDotColor(status: string): string {
+  switch (status) {
+    case 'completed':
+      return 'border-emerald-500';
+    case 'failed':
+      return 'border-red-500';
+    case 'canceled':
+      return 'border-red-500';
+    case 'paused':
+      return 'border-amber-500';
+    default:
+      return 'border-muted-foreground';
+  }
+}
+
+// ============================================================
+// STATUS BADGES
+// ============================================================
+
+function InvoiceStatusBadge({ status }: { status: string }) {
+  const config: Record<string, { className: string; label: string }> = {
+    paid: { className: 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400', label: 'Paid' },
+    open: { className: 'bg-amber-500/10 text-amber-600 dark:text-amber-400', label: 'Open' },
+    draft: { className: 'bg-muted text-muted-foreground', label: 'Draft' },
+    void: { className: 'bg-red-500/10 text-red-600 dark:text-red-400', label: 'Void' },
+    uncollectible: { className: 'bg-red-500/10 text-red-600 dark:text-red-400', label: 'Uncollectible' },
   };
 
-  const getStatusBadge = () => {
-    const statusColors: Record<string, string> = {
-      paid: 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400',
-      open: 'bg-amber-500/10 text-amber-600 dark:text-amber-400',
-      draft: 'bg-muted text-muted-foreground',
-      void: 'bg-red-500/10 text-red-600 dark:text-red-400',
-      uncollectible: 'bg-red-500/10 text-red-600 dark:text-red-400',
-      completed: 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400',
-      canceled: 'bg-red-500/10 text-red-600 dark:text-red-400',
-      paused: 'bg-amber-500/10 text-amber-600 dark:text-amber-400',
-      warning: 'bg-amber-500/10 text-amber-600 dark:text-amber-400',
-    };
+  const { className, label } = config[status] || { className: '', label: status };
+  return (
+    <Badge variant="secondary" className={cn('text-xs', className)}>
+      {label}
+    </Badge>
+  );
+}
 
+function RefundStatusBadge({ status }: { status: string }) {
+  const config: Record<string, { className: string; label: string }> = {
+    succeeded: { className: 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400', label: 'Succeeded' },
+    pending: { className: 'bg-amber-500/10 text-amber-600 dark:text-amber-400', label: 'Pending' },
+    failed: { className: 'bg-red-500/10 text-red-600 dark:text-red-400', label: 'Failed' },
+    canceled: { className: 'bg-muted text-muted-foreground', label: 'Canceled' },
+    requires_action: { className: 'bg-amber-500/10 text-amber-600 dark:text-amber-400', label: 'Action Required' },
+  };
+
+  const { className, label } = config[status] || { className: '', label: status };
+  return (
+    <Badge variant="secondary" className={cn('text-xs', className)}>
+      {label}
+    </Badge>
+  );
+}
+
+function SubscriptionStatusBadge({ status, cancelAtPeriodEnd }: { status: string; cancelAtPeriodEnd: boolean }) {
+  if (cancelAtPeriodEnd && status === 'active') {
     return (
-      <Badge variant="secondary" className={`text-xs ${statusColors[event.status] || ''}`}>
-        {event.status === 'paid' ? 'Paid' : event.status.charAt(0).toUpperCase() + event.status.slice(1)}
+      <Badge variant="secondary" className="text-xs bg-amber-500/10 text-amber-600 dark:text-amber-400">
+        Canceling
       </Badge>
     );
+  }
+
+  const config: Record<string, { className: string; label: string }> = {
+    active: { className: 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400', label: 'Active' },
+    trialing: { className: 'bg-blue-500/10 text-blue-600 dark:text-blue-400', label: 'Trial' },
+    past_due: { className: 'bg-red-500/10 text-red-600 dark:text-red-400', label: 'Past Due' },
+    canceled: { className: 'bg-muted text-muted-foreground', label: 'Canceled' },
+    unpaid: { className: 'bg-red-500/10 text-red-600 dark:text-red-400', label: 'Unpaid' },
+    incomplete: { className: 'bg-amber-500/10 text-amber-600 dark:text-amber-400', label: 'Incomplete' },
+    incomplete_expired: { className: 'bg-muted text-muted-foreground', label: 'Expired' },
+    paused: { className: 'bg-amber-500/10 text-amber-600 dark:text-amber-400', label: 'Paused' },
   };
 
-  const formatAmount = (amount: number, currency: string) => {
-    return new Intl.NumberFormat('en-US', {
-      style: 'currency',
-      currency: currency.toUpperCase(),
-    }).format(amount / 100);
-  };
-
+  const { className, label } = config[status] || { className: '', label: status };
   return (
-    <div className="flex items-start gap-4 rounded-lg border border-border bg-muted/30 p-4 hover:bg-muted/50 transition-colors">
-      {/* Icon */}
-      <div className="shrink-0 w-10 h-10 rounded-full bg-muted flex items-center justify-center">{getIcon()}</div>
+    <Badge variant="secondary" className={cn('text-xs', className)}>
+      {label}
+    </Badge>
+  );
+}
 
-      {/* Content */}
-      <div className="flex-1 min-w-0">
-        <div className="flex items-center gap-2 mb-1">
-          <span className="font-medium">{event.description}</span>
-          {getStatusBadge()}
-        </div>
-        <div className="flex items-center gap-4 text-sm text-muted-foreground">
-          <span>{new Date(event.created).toLocaleDateString()}</span>
-          <span>{new Date(event.created).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
-          {event.amount !== undefined && event.currency && (
-            <span className="font-medium text-foreground">{formatAmount(event.amount, event.currency)}</span>
-          )}
-        </div>
-      </div>
+function ActivityStatusBadge({ status }: { status: string }) {
+  const config: Record<string, { className: string; label: string }> = {
+    completed: { className: 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400', label: 'Completed' },
+    failed: { className: 'bg-red-500/10 text-red-600 dark:text-red-400', label: 'Failed' },
+    canceled: { className: 'bg-muted text-muted-foreground', label: 'Canceled' },
+    paused: { className: 'bg-amber-500/10 text-amber-600 dark:text-amber-400', label: 'Paused' },
+  };
 
-      {/* Actions */}
-      {event.type === 'invoice' && (event.invoiceUrl || event.invoicePdf) && (
-        <div className="flex items-center gap-2">
-          {event.invoiceUrl && (
-            <Button variant="ghost" size="sm" asChild>
-              <a href={event.invoiceUrl} target="_blank" rel="noopener noreferrer">
-                <IconExternalLink className="h-4 w-4" />
-                <span className="sr-only">View Invoice</span>
-              </a>
-            </Button>
-          )}
-          {event.invoicePdf && (
-            <Button variant="ghost" size="sm" asChild>
-              <a href={event.invoicePdf} target="_blank" rel="noopener noreferrer" download>
-                <IconDownload className="h-4 w-4" />
-                <span className="sr-only">Download PDF</span>
-              </a>
-            </Button>
-          )}
-        </div>
-      )}
-    </div>
+  const { className, label } = config[status] || { className: '', label: status };
+  return (
+    <Badge variant="secondary" className={cn('text-xs', className)}>
+      {label}
+    </Badge>
   );
 }
 
