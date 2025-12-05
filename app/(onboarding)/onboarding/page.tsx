@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAction, useQuery } from 'convex/react';
 import { useAuth } from '@workos-inc/authkit-nextjs/components';
@@ -28,6 +28,7 @@ import {
   Building2,
   User,
   Check,
+  PartyPopper,
 } from 'lucide-react';
 
 const LANGUAGES = [
@@ -99,22 +100,43 @@ const plans = [
   },
 ];
 
-type Step = 'welcome' | 'language' | 'organization' | 'plan';
+// Step types for different flows
+type OwnerStep = 'welcome' | 'language' | 'organization' | 'plan';
+type MemberStep = 'welcome' | 'language' | 'complete';
+type Step = OwnerStep | MemberStep;
 
 export default function OnboardingPage() {
   const router = useRouter();
   const { switchToOrganization } = useAuth();
   const user = useQuery(api.users.query.me);
+  const onboardingContext = useQuery(api.users.query.getOnboardingContext);
   const completeOnboarding = useAction(api.users.action.completeOnboarding);
   const createOrganization = useAction(api.organizations.action.create);
 
   const [step, setStep] = useState<Step>('welcome');
   const [selectedLocale, setSelectedLocale] = useState<string>('en');
-  const [orgName, setOrgName] = useState('');
+  // null = use default, string = user has typed something
+  const [orgNameInput, setOrgNameInput] = useState<string | null>(null);
   const [selectedPlan, setSelectedPlan] = useState<'personal' | 'pro' | 'enterprise'>('personal');
   const [isYearly, setIsYearly] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Compute the effective org name (user input or default based on user's name)
+  const defaultOrgName = user ? `${user.firstName || 'My'}'s Workspace` : '';
+  const orgName = orgNameInput ?? defaultOrgName;
+
+  // Determine if user already belongs to an organization (invited user flow)
+  // If they have ANY organization membership, they don't need to create one
+  const isInvitedUserFlow = onboardingContext?.hasOrganizations ?? false;
+
+  // Steps vary based on user's role
+  const steps: Step[] = useMemo(() => {
+    if (isInvitedUserFlow) {
+      return ['welcome', 'language', 'complete'];
+    }
+    return ['welcome', 'language', 'organization', 'plan'];
+  }, [isInvitedUserFlow]);
 
   // Redirect if already onboarded
   useEffect(() => {
@@ -122,13 +144,6 @@ export default function OnboardingPage() {
       router.replace('/');
     }
   }, [user?.metadata?.onboardingComplete, router]);
-
-  // Set default org name when user data loads
-  useEffect(() => {
-    if (user && !orgName) {
-      setOrgName(`${user.firstName || 'My'}'s Workspace`);
-    }
-  }, [user, orgName]);
 
   // Show nothing while redirecting
   if (user?.metadata?.onboardingComplete === 'true') {
@@ -142,7 +157,12 @@ export default function OnboardingPage() {
         setStep('language');
         break;
       case 'language':
-        setStep('organization');
+        // Different next step based on flow
+        if (isInvitedUserFlow) {
+          setStep('complete');
+        } else {
+          setStep('organization');
+        }
         break;
       case 'organization':
         if (!orgName.trim()) {
@@ -166,6 +186,35 @@ export default function OnboardingPage() {
       case 'plan':
         setStep('organization');
         break;
+      case 'complete':
+        setStep('language');
+        break;
+    }
+  };
+
+  // Complete onboarding for invited users (simpler flow - just saves preferences)
+  const handleInvitedUserComplete = async () => {
+    setError(null);
+    setIsSubmitting(true);
+
+    try {
+      // Just save language preference and mark onboarding complete
+      await completeOnboarding({
+        preferredLocale: selectedLocale as 'en' | 'de' | 'fr' | 'it' | 'rm',
+      });
+
+      // If user has organizations, switch to the first one
+      if (onboardingContext?.memberships && onboardingContext.memberships.length > 0) {
+        const firstOrg = onboardingContext.memberships[0];
+        await switchToOrganization(firstOrg.organizationId);
+        console.log(`[Onboarding] Switched to organization: ${firstOrg.organizationId}`);
+      }
+
+      // Redirect to dashboard
+      router.replace('/');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to complete onboarding');
+      setIsSubmitting(false);
     }
   };
 
@@ -234,8 +283,8 @@ export default function OnboardingPage() {
     return user?.email?.[0]?.toUpperCase() || 'U';
   };
 
-  // Loading state
-  if (user === undefined) {
+  // Loading state - wait for both user and onboarding context
+  if (user === undefined || onboardingContext === undefined) {
     return (
       <div className="flex min-h-screen items-center justify-center">
         <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
@@ -243,7 +292,6 @@ export default function OnboardingPage() {
     );
   }
 
-  const steps: Step[] = ['welcome', 'language', 'organization', 'plan'];
   const currentStepIndex = steps.indexOf(step);
 
   return (
@@ -315,19 +363,28 @@ export default function OnboardingPage() {
                   </AvatarFallback>
                 </Avatar>
                 <h2 className="text-2xl font-bold mb-2">Welcome{user?.firstName ? `, ${user.firstName}` : ''}!</h2>
-                <p className="text-muted-foreground">Let's set up your workspace in just a few steps.</p>
+                <p className="text-muted-foreground">
+                  {isInvitedUserFlow
+                    ? 'Just a few quick preferences and you&apos;re ready to go.'
+                    : 'Let&apos;s set up your workspace in just a few steps.'}
+                </p>
               </div>
 
               <div className="rounded-xl border border-border bg-card p-6">
                 <div className="flex items-start gap-4">
                   <div className="h-12 w-12 rounded-xl bg-primary/10 flex items-center justify-center shrink-0">
-                    <Sparkles className="h-6 w-6 text-primary" />
+                    {isInvitedUserFlow ? (
+                      <Users className="h-6 w-6 text-primary" />
+                    ) : (
+                      <Sparkles className="h-6 w-6 text-primary" />
+                    )}
                   </div>
                   <div>
-                    <h3 className="font-semibold mb-1">Quick Setup</h3>
+                    <h3 className="font-semibold mb-1">{isInvitedUserFlow ? 'Almost There' : 'Quick Setup'}</h3>
                     <p className="text-sm text-muted-foreground">
-                      We'll help you configure your preferences and create your first organization. This will only take
-                      a minute.
+                      {isInvitedUserFlow
+                        ? `You've been added to ${onboardingContext?.memberships?.[0]?.organizationName || 'an organization'}. Let's configure your preferences.`
+                        : 'We&apos;ll help you configure your preferences and create your first organization. This will only take a minute.'}
                     </p>
                   </div>
                 </div>
@@ -393,15 +450,15 @@ export default function OnboardingPage() {
             </div>
           )}
 
-          {/* Step: Organization Name */}
-          {step === 'organization' && (
+          {/* Step: Organization Name (Owner/Admin flow only) */}
+          {step === 'organization' && !isInvitedUserFlow && (
             <div className="space-y-8">
               <div className="text-center">
                 <div className="h-16 w-16 rounded-2xl bg-primary/10 flex items-center justify-center mx-auto mb-4">
                   <Building2 className="h-8 w-8 text-primary" />
                 </div>
                 <h2 className="text-2xl font-bold mb-2">Name Your Workspace</h2>
-                <p className="text-muted-foreground">This is your organization where you'll manage everything.</p>
+                <p className="text-muted-foreground">This is your organization where you&apos;ll manage everything.</p>
               </div>
 
               <div className="space-y-4">
@@ -412,7 +469,7 @@ export default function OnboardingPage() {
                     </div>
                     <div className="flex-1">
                       <h3 className="font-semibold text-lg">{orgName || 'Your Workspace'}</h3>
-                      <p className="text-sm text-muted-foreground">You'll choose your plan next</p>
+                      <p className="text-sm text-muted-foreground">You&apos;ll choose your plan next</p>
                     </div>
                   </div>
 
@@ -423,7 +480,7 @@ export default function OnboardingPage() {
                       type="text"
                       placeholder="Acme Corporation"
                       value={orgName}
-                      onChange={(e) => setOrgName(e.target.value)}
+                      onChange={(e) => setOrgNameInput(e.target.value)}
                       className="text-base"
                       autoFocus
                       onKeyDown={(e) => {
@@ -451,8 +508,8 @@ export default function OnboardingPage() {
             </div>
           )}
 
-          {/* Step: Plan Selection */}
-          {step === 'plan' && (
+          {/* Step: Plan Selection (Owner/Admin flow only) */}
+          {step === 'plan' && !isInvitedUserFlow && (
             <div className="space-y-6">
               <div className="text-center">
                 <h2 className="text-2xl font-bold mb-2">Choose Your Plan</h2>
@@ -552,6 +609,91 @@ export default function OnboardingPage() {
                   ) : (
                     <>
                       Continue to Payment
+                      <ArrowRight className="h-4 w-4" />
+                    </>
+                  )}
+                </Button>
+              </div>
+            </div>
+          )}
+
+          {/* Step: Complete (Invited user flow - already belongs to an organization) */}
+          {step === 'complete' && isInvitedUserFlow && (
+            <div className="space-y-8">
+              <div className="text-center">
+                <div className="h-16 w-16 rounded-2xl bg-emerald-500/10 flex items-center justify-center mx-auto mb-4">
+                  <PartyPopper className="h-8 w-8 text-emerald-500" />
+                </div>
+                <h2 className="text-2xl font-bold mb-2">You&apos;re All Set!</h2>
+                <p className="text-muted-foreground">
+                  You&apos;re already part of{' '}
+                  {onboardingContext?.memberships && onboardingContext.memberships.length > 0 ? (
+                    <span className="font-medium text-foreground">
+                      {onboardingContext.memberships[0].organizationName}
+                    </span>
+                  ) : (
+                    'an organization'
+                  )}
+                  . Let&apos;s get you started.
+                </p>
+              </div>
+
+              {/* Organization info card */}
+              {onboardingContext?.memberships && onboardingContext.memberships.length > 0 && (
+                <div className="rounded-xl border border-border bg-card p-6">
+                  <div className="flex items-center gap-4">
+                    <div className="h-14 w-14 rounded-xl bg-gradient-to-br from-primary to-primary/80 flex items-center justify-center text-primary-foreground font-bold text-lg">
+                      {onboardingContext.memberships[0].organizationName.charAt(0).toUpperCase()}
+                    </div>
+                    <div className="flex-1">
+                      <h3 className="font-semibold text-lg">{onboardingContext.memberships[0].organizationName}</h3>
+                      <div className="flex items-center gap-2 mt-1">
+                        <Badge variant="secondary" className="capitalize">
+                          {onboardingContext.memberships[0].role}
+                        </Badge>
+                        {onboardingContext.memberships.length > 1 && (
+                          <span className="text-sm text-muted-foreground">
+                            +{onboardingContext.memberships.length - 1} more organization
+                            {onboardingContext.memberships.length > 2 ? 's' : ''}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                    <CheckCircle2 className="h-6 w-6 text-emerald-500" />
+                  </div>
+                </div>
+              )}
+
+              {/* Quick summary */}
+              <div className="rounded-xl border border-border bg-muted/30 p-4 space-y-3">
+                <h4 className="font-medium text-sm">Your preferences</h4>
+                <div className="flex items-center gap-3">
+                  <Globe className="h-4 w-4 text-muted-foreground" />
+                  <span className="text-sm">
+                    Language:{' '}
+                    <span className="font-medium">
+                      {LANGUAGES.find((l) => l.value === selectedLocale)?.label || 'English'}
+                    </span>
+                  </span>
+                </div>
+              </div>
+
+              {error && <p className="text-sm text-destructive text-center">{error}</p>}
+
+              <div className="flex gap-3">
+                <Button variant="outline" onClick={handleBack} disabled={isSubmitting} className="flex-1 h-11 gap-2">
+                  <ArrowLeft className="h-4 w-4" />
+                  Back
+                </Button>
+                <Button onClick={handleInvitedUserComplete} disabled={isSubmitting} className="flex-1 h-11 gap-2">
+                  {isSubmitting ? (
+                    <>
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                      Finishing…
+                    </>
+                  ) : (
+                    <>
+                      Go to Dashboard
                       <ArrowRight className="h-4 w-4" />
                     </>
                   )}

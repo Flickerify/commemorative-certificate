@@ -7,6 +7,52 @@ import { stripe } from '../billing/stripe';
 import { internal } from '../_generated/api';
 import type { Id } from '../_generated/dataModel';
 
+import type { AuditAction, AuditCategory, AuditStatus } from '../schema';
+import type { FunctionReference } from 'convex/server';
+
+// Helper to log audit events from actions
+async function logAuditFromAction(
+  ctx: { runMutation: <T>(fn: FunctionReference<'mutation', 'internal'>, args: T) => Promise<unknown> },
+  params: {
+    organizationId: Id<'organizations'>;
+    actorId?: Id<'users'>;
+    actorExternalId?: string;
+    actorEmail?: string;
+    actorName?: string;
+    actorType: 'user' | 'system' | 'api';
+    category: AuditCategory;
+    action: AuditAction;
+    status: AuditStatus;
+    targetType?: string;
+    targetId?: string;
+    targetName?: string;
+    description: string;
+    metadata?: Record<string, unknown>;
+  },
+) {
+  try {
+    await ctx.runMutation(internal.audit.internal.mutation.logAuditEvent, {
+      organizationId: params.organizationId,
+      actorId: params.actorId,
+      actorExternalId: params.actorExternalId,
+      actorEmail: params.actorEmail,
+      actorName: params.actorName,
+      actorType: params.actorType,
+      category: params.category,
+      action: params.action,
+      status: params.status,
+      targetType: params.targetType,
+      targetId: params.targetId,
+      targetName: params.targetName,
+      description: params.description,
+      metadata: params.metadata,
+    });
+  } catch (error) {
+    // Don't fail the main operation if audit logging fails
+    console.error('[Audit] Failed to log audit event:', error);
+  }
+}
+
 /**
  * Create a new organization in WorkOS with Stripe billing integration.
  * Organizations require a paid subscription (Personal, Pro, or Enterprise).
@@ -113,49 +159,68 @@ export const create = protectedAction({
 
     // 8. Create Stripe checkout session for subscription
     // All plans require payment upfront with a 30-day money-back guarantee
-      const checkout = await stripe.checkout.sessions.create({
-        customer: stripeCustomer.id,
-        mode: 'subscription',
-        line_items: [
-          {
-            price: priceId,
-            quantity: 1,
-          },
-        ],
-        success_url: successUrl,
-        cancel_url: cancelUrl,
-        subscription_data: {
-          metadata: {
-            workosOrganizationId: organization.id,
-          },
+    const checkout = await stripe.checkout.sessions.create({
+      customer: stripeCustomer.id,
+      mode: 'subscription',
+      line_items: [
+        {
+          price: priceId,
+          quantity: 1,
         },
+      ],
+      success_url: successUrl,
+      cancel_url: cancelUrl,
+      subscription_data: {
         metadata: {
           workosOrganizationId: organization.id,
-          convexOrganizationId: convexOrgId,
         },
-        // Checkout session expires after 24 hours by default
-        expires_at: Math.floor(Date.now() / 1000) + 60 * 60 * 24, // 24 hours
-      });
-
-      console.log(`[Stripe] Created checkout session ${checkout.id} for organization ${organization.name}`);
-
-      // Store pending checkout state so we can track/recover abandoned checkouts
-      await ctx.runMutation(internal.billing.internal.mutation.createPendingSubscription, {
-        organizationId: convexOrgId,
-        stripeCustomerId: stripeCustomer.id,
-        checkoutSessionId: checkout.id,
-        priceId,
-      });
-      console.log(`[Convex] Stored pending checkout for organization ${convexOrgId}`);
-
-      return {
+      },
+      metadata: {
         workosOrganizationId: organization.id,
         convexOrganizationId: convexOrgId,
-        name: organization.name,
-        stripeCustomerId: stripeCustomer.id,
-        checkoutSessionId: checkout.id,
-        checkoutUrl: checkout.url,
-      };
+      },
+      // Checkout session expires after 24 hours by default
+      expires_at: Math.floor(Date.now() / 1000) + 60 * 60 * 24, // 24 hours
+    });
+
+    console.log(`[Stripe] Created checkout session ${checkout.id} for organization ${organization.name}`);
+
+    // Store pending checkout state so we can track/recover abandoned checkouts
+    await ctx.runMutation(internal.billing.internal.mutation.createPendingSubscription, {
+      organizationId: convexOrgId,
+      stripeCustomerId: stripeCustomer.id,
+      checkoutSessionId: checkout.id,
+      priceId,
+    });
+    console.log(`[Convex] Stored pending checkout for organization ${convexOrgId}`);
+
+    // Log audit event for organization creation
+    const actorName = [ctx.user.firstName, ctx.user.lastName].filter(Boolean).join(' ') || undefined;
+    await logAuditFromAction(ctx, {
+      organizationId: convexOrgId,
+      actorId: ctx.user._id,
+      actorExternalId: ctx.user.externalId,
+      actorEmail: ctx.user.email,
+      actorName,
+      actorType: 'user',
+      category: 'settings',
+      action: 'settings.organization_updated',
+      status: 'success',
+      targetType: 'organization',
+      targetId: organization.id,
+      targetName: name,
+      description: `${actorName || ctx.user.email} created organization "${name}"`,
+      metadata: { tier, workosOrganizationId: organization.id },
+    });
+
+    return {
+      workosOrganizationId: organization.id,
+      convexOrganizationId: convexOrgId,
+      name: organization.name,
+      stripeCustomerId: stripeCustomer.id,
+      checkoutSessionId: checkout.id,
+      checkoutUrl: checkout.url,
+    };
   },
 });
 
@@ -176,9 +241,28 @@ export const update = protectedAction({
       name,
     });
 
-    await ctx.runMutation(internal.organizations.internal.mutation.upsertFromWorkos, {
+    const convexOrgId = await ctx.runMutation(internal.organizations.internal.mutation.upsertFromWorkos, {
       externalId: organization.id,
       name: organization.name,
+    });
+
+    // Log audit event for organization update
+    const actorName = [ctx.user.firstName, ctx.user.lastName].filter(Boolean).join(' ') || undefined;
+    await logAuditFromAction(ctx, {
+      organizationId: convexOrgId,
+      actorId: ctx.user._id,
+      actorExternalId: ctx.user.externalId,
+      actorEmail: ctx.user.email,
+      actorName,
+      actorType: 'user',
+      category: 'settings',
+      action: 'settings.organization_updated',
+      status: 'success',
+      targetType: 'organization',
+      targetId: organization.id,
+      targetName: organization.name,
+      description: `${actorName || ctx.user.email} updated organization settings`,
+      metadata: name ? { newName: name } : undefined,
     });
 
     return {
@@ -221,6 +305,25 @@ export const remove = protectedAction({
       );
     }
 
+    // Log audit event before deletion (while org still exists)
+    const actorName = [ctx.user.firstName, ctx.user.lastName].filter(Boolean).join(' ') || undefined;
+    await logAuditFromAction(ctx, {
+      organizationId: organization._id,
+      actorId: ctx.user._id,
+      actorExternalId: ctx.user.externalId,
+      actorEmail: ctx.user.email,
+      actorName,
+      actorType: 'user',
+      category: 'settings',
+      action: 'settings.organization_updated',
+      status: 'success',
+      targetType: 'organization',
+      targetId: organizationId,
+      targetName: organization.name,
+      description: `${actorName || ctx.user.email} deleted organization "${organization.name}"`,
+      metadata: { action: 'deleted' },
+    });
+
     // Safe to delete - proceed with WorkOS deletion
     const workos = new WorkOS(process.env.WORKOS_API_KEY);
     await workos.organizations.deleteOrganization(organizationId);
@@ -233,6 +336,7 @@ export const remove = protectedAction({
 
 /**
  * Invite a user to an organization via email.
+ * Only owners can invite other users as owners.
  */
 export const inviteMember = protectedAction({
   args: {
@@ -243,11 +347,49 @@ export const inviteMember = protectedAction({
   async handler(ctx, { organizationId, email, roleSlug }) {
     const workos = new WorkOS(process.env.WORKOS_API_KEY);
 
+    // Check if inviting as owner - only owners can do this
+    if (roleSlug === 'owner') {
+      const currentMembership = await workos.userManagement.listOrganizationMemberships({
+        organizationId,
+        userId: ctx.user.externalId,
+      });
+
+      const membership = currentMembership.data[0];
+      if (!membership || membership.role?.slug !== 'owner') {
+        throw new ConvexError('Only owners can invite other users as owners');
+      }
+    }
+
     const invitation = await workos.userManagement.sendInvitation({
       email,
       organizationId,
       roleSlug: roleSlug || 'member',
     });
+
+    // Get Convex organization ID for audit logging
+    const convexOrg = await ctx.runQuery(internal.organizations.internal.query.getByExternalId, {
+      externalId: organizationId,
+    });
+
+    if (convexOrg) {
+      const actorName = [ctx.user.firstName, ctx.user.lastName].filter(Boolean).join(' ') || undefined;
+      await logAuditFromAction(ctx, {
+        organizationId: convexOrg._id,
+        actorId: ctx.user._id,
+        actorExternalId: ctx.user.externalId,
+        actorEmail: ctx.user.email,
+        actorName,
+        actorType: 'user',
+        category: 'member',
+        action: 'member.invited',
+        status: 'success',
+        targetType: 'user',
+        targetId: email,
+        targetName: email,
+        description: `${actorName || ctx.user.email} invited ${email} to the organization`,
+        metadata: { role: roleSlug || 'member', invitationId: invitation.id },
+      });
+    }
 
     return {
       id: invitation.id,
@@ -280,7 +422,43 @@ export const removeMember = protectedAction({
       throw new ConvexError('Membership not found');
     }
 
+    // Get user details for audit log
+    let targetUserEmail: string | undefined;
+    let targetUserName: string | undefined;
+    try {
+      const targetUser = await workos.userManagement.getUser(userId);
+      targetUserEmail = targetUser.email;
+      targetUserName = [targetUser.firstName, targetUser.lastName].filter(Boolean).join(' ') || undefined;
+    } catch {
+      // User might not exist anymore
+    }
+
     await workos.userManagement.deleteOrganizationMembership(membership.id);
+
+    // Get Convex organization ID for audit logging
+    const convexOrg = await ctx.runQuery(internal.organizations.internal.query.getByExternalId, {
+      externalId: organizationId,
+    });
+
+    if (convexOrg) {
+      const actorName = [ctx.user.firstName, ctx.user.lastName].filter(Boolean).join(' ') || undefined;
+      await logAuditFromAction(ctx, {
+        organizationId: convexOrg._id,
+        actorId: ctx.user._id,
+        actorExternalId: ctx.user.externalId,
+        actorEmail: ctx.user.email,
+        actorName,
+        actorType: 'user',
+        category: 'member',
+        action: 'member.removed',
+        status: 'success',
+        targetType: 'user',
+        targetId: userId,
+        targetName: targetUserName || targetUserEmail || userId,
+        description: `${actorName || ctx.user.email} removed ${targetUserName || targetUserEmail || 'a member'} from the organization`,
+        metadata: { membershipId: membership.id, previousRole: membership.role?.slug },
+      });
+    }
 
     return { success: true };
   },
@@ -309,9 +487,47 @@ export const updateMemberRole = protectedAction({
       throw new ConvexError('Membership not found');
     }
 
+    const previousRole = membership.role?.slug;
+
+    // Get user details for audit log
+    let targetUserEmail: string | undefined;
+    let targetUserName: string | undefined;
+    try {
+      const targetUser = await workos.userManagement.getUser(userId);
+      targetUserEmail = targetUser.email;
+      targetUserName = [targetUser.firstName, targetUser.lastName].filter(Boolean).join(' ') || undefined;
+    } catch {
+      // User might not exist anymore
+    }
+
     await workos.userManagement.updateOrganizationMembership(membership.id, {
       roleSlug,
     });
+
+    // Get Convex organization ID for audit logging
+    const convexOrg = await ctx.runQuery(internal.organizations.internal.query.getByExternalId, {
+      externalId: organizationId,
+    });
+
+    if (convexOrg) {
+      const actorName = [ctx.user.firstName, ctx.user.lastName].filter(Boolean).join(' ') || undefined;
+      await logAuditFromAction(ctx, {
+        organizationId: convexOrg._id,
+        actorId: ctx.user._id,
+        actorExternalId: ctx.user.externalId,
+        actorEmail: ctx.user.email,
+        actorName,
+        actorType: 'user',
+        category: 'member',
+        action: 'member.role_changed',
+        status: 'success',
+        targetType: 'user',
+        targetId: userId,
+        targetName: targetUserName || targetUserEmail || userId,
+        description: `${actorName || ctx.user.email} changed ${targetUserName || targetUserEmail || 'a member'}'s role from ${previousRole || 'unknown'} to ${roleSlug}`,
+        metadata: { previousRole, newRole: roleSlug, membershipId: membership.id },
+      });
+    }
 
     return { success: true };
   },

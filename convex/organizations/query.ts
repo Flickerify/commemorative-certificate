@@ -187,3 +187,24 @@ export const isAdmin = protectedQuery({
     return membership.role === 'admin' || membership.role === 'owner';
   },
 });
+
+/**
+ * Check if current user is owner of an organization.
+ */
+export const isOwner = protectedQuery({
+  args: {
+    organizationId: v.string(),
+  },
+  async handler(ctx, { organizationId }) {
+    const membership = await ctx.db
+      .query('organizationMemberships')
+      .withIndex('by_org_user', (q) => q.eq('organizationId', organizationId).eq('userId', ctx.user.externalId))
+      .first();
+
+    if (!membership) {
+      return false;
+    }
+
+    return membership.role === 'owner';
+  },
+});

@@ -2,13 +2,77 @@ import { v } from 'convex/values';
 import { internalMutation } from '../../functions';
 import { userWithoutRole, Metadata, metadataValidator } from '../../schema';
 
+/**
+ * Pre-provision a user from WorkOS registration action data.
+ * Called asynchronously during the registration flow (before the user exists in WorkOS).
+ * Creates a pending user record that will be completed when the user.created webhook arrives.
+ *
+ * Uses email as the temporary identifier since WorkOS user ID doesn't exist yet.
+ */
+export const provisionFromRegistration = internalMutation({
+  args: {
+    email: v.string(),
+    firstName: v.optional(v.string()),
+    lastName: v.optional(v.string()),
+  },
+  returns: v.union(v.id('users'), v.null()),
+  async handler(ctx, args) {
+    // Check if user already exists by email (prevents duplicates)
+    const existingByEmail = await ctx.db
+      .query('users')
+      .withIndex('by_email', (q) => q.eq('email', args.email))
+      .first();
+
+    if (existingByEmail) {
+      console.log(`[Registration] User already exists for email: ${args.email}`);
+      return existingByEmail._id;
+    }
+
+    // Create pending user record
+    // Note: externalId is set to a placeholder - will be updated by user.created webhook
+    const now = Date.now();
+    const userId = await ctx.db.insert('users', {
+      externalId: `pending:${args.email}`, // Placeholder until webhook arrives
+      email: args.email,
+      firstName: args.firstName ?? null,
+      lastName: args.lastName ?? null,
+      emailVerified: false,
+      profilePictureUrl: null,
+      role: 'user',
+      metadata: {
+        onboardingComplete: 'false',
+      },
+      updatedAt: now,
+    });
+
+    console.log(`[Registration] Pre-provisioned user: ${userId} for email: ${args.email}`);
+    return userId;
+  },
+});
+
 export const upsertFromWorkos = internalMutation({
   args: userWithoutRole,
   async handler(ctx, args) {
-    const user = await ctx.db
+    // First, try to find by external ID (normal case)
+    let user = await ctx.db
       .query('users')
       .withIndex('by_external_id', (q) => q.eq('externalId', args.externalId))
       .first();
+
+    // If not found by external ID, check for pre-provisioned user by email
+    // Pre-provisioned users have externalId = "pending:email"
+    if (!user && args.email) {
+      const pendingUser = await ctx.db
+        .query('users')
+        .withIndex('by_email', (q) => q.eq('email', args.email))
+        .first();
+
+      // Only match if this is a pending record (not a different user's record)
+      if (pendingUser && pendingUser.externalId.startsWith('pending:')) {
+        console.log(`[Webhook] Linking pre-provisioned user ${pendingUser._id} to WorkOS ID: ${args.externalId}`);
+        user = pendingUser;
+      }
+    }
 
     if (!user) {
       // New user: set defaults for role, use metadata from WorkOS (or default onboardingComplete: 'false')

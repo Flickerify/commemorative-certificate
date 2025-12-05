@@ -20,14 +20,17 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
-import { User, Loader2, Check, Mail, Shield, Calendar, Trash2, AlertTriangle } from 'lucide-react';
+import { User, Loader2, Check, Mail, Shield, Trash2, AlertTriangle } from 'lucide-react';
 import { toast } from 'sonner';
+import { useAuth } from '@workos-inc/authkit-nextjs/components';
 
 export default function ProfilePage() {
+  const { signOut } = useAuth();
+
   // Fetch user data
   const user = useQuery(api.users.query.me);
   const updateProfile = useAction(api.users.action.updateProfile);
-  const canDeleteAccount = useAction(api.users.action.canDeleteAccount);
+  const canDeleteAccount = useQuery(api.users.query.canDeleteAccount);
   const deleteAccount = useAction(api.users.action.deleteAccount);
 
   // Local state for form
@@ -38,13 +41,7 @@ export default function ProfilePage() {
 
   // Delete account state
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
-  const [isCheckingDeletion, setIsCheckingDeletion] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
-  const [deletionCheck, setDeletionCheck] = useState<{
-    canDelete: boolean;
-    reason?: string;
-    organizationsWithActiveSubscriptions: string[];
-  } | null>(null);
 
   // Initialize form with user data (only once)
   const hasInitializedRef = useRef(false);
@@ -74,20 +71,8 @@ export default function ProfilePage() {
     }
   };
 
-  const handleOpenDeleteDialog = async () => {
+  const handleOpenDeleteDialog = () => {
     setIsDeleteDialogOpen(true);
-    setIsCheckingDeletion(true);
-    setDeletionCheck(null);
-
-    try {
-      const result = await canDeleteAccount({});
-      setDeletionCheck(result);
-    } catch (err) {
-      console.error('Failed to check deletion eligibility:', err);
-      toast.error('Failed to check if account can be deleted');
-    } finally {
-      setIsCheckingDeletion(false);
-    }
   };
 
   const handleDeleteAccount = async () => {
@@ -96,8 +81,8 @@ export default function ProfilePage() {
       const result = await deleteAccount({});
       if (result.success) {
         toast.success('Account deleted successfully');
-        // Redirect to home/signout page
-        window.location.href = '/';
+        // Use WorkOS AuthKit signOut to force sign out and session clean up
+        await signOut({ returnTo: '/' });
       }
     } catch (err) {
       console.error('Failed to delete account:', err);
@@ -245,34 +230,40 @@ export default function ProfilePage() {
                 </AlertDialogDescription>
               </AlertDialogHeader>
 
-              {isCheckingDeletion ? (
+              {canDeleteAccount === undefined ? (
                 <div className="flex items-center justify-center py-6">
                   <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
                 </div>
-              ) : deletionCheck ? (
+              ) : (
                 <div className="py-4">
-                  {deletionCheck.canDelete ? (
+                  {canDeleteAccount.canDelete ? (
                     <Alert>
                       <Check className="h-4 w-4" />
                       <AlertTitle>Ready to delete</AlertTitle>
                       <AlertDescription>
-                        Your account and all associated data will be permanently deleted. Any organizations you own will
-                        also be deleted.
+                        Your account and all associated data will be permanently deleted.
+                        {canDeleteAccount.memberCount > 0 && (
+                          <>
+                            {' '}
+                            Your {canDeleteAccount.memberCount} organization membership(s) will be automatically
+                            removed.
+                          </>
+                        )}
                       </AlertDescription>
                     </Alert>
                   ) : (
                     <Alert variant="destructive">
                       <AlertTriangle className="h-4 w-4" />
                       <AlertTitle>Cannot delete account</AlertTitle>
-                      <AlertDescription>{deletionCheck.reason}</AlertDescription>
+                      <AlertDescription className="whitespace-pre-line">{canDeleteAccount.reason}</AlertDescription>
                     </Alert>
                   )}
                 </div>
-              ) : null}
+              )}
 
               <AlertDialogFooter>
                 <AlertDialogCancel disabled={isDeleting}>Cancel</AlertDialogCancel>
-                {deletionCheck?.canDelete && (
+                {canDeleteAccount?.canDelete && (
                   <AlertDialogAction
                     onClick={handleDeleteAccount}
                     disabled={isDeleting}

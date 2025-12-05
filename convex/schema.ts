@@ -96,6 +96,16 @@ export const organizationSubscriptions = defineTable({
   // Pending checkout tracking (for abandoned checkout recovery)
   pendingCheckoutSessionId: v.optional(v.string()),
   pendingPriceId: v.optional(v.string()),
+  // Scheduled plan change (for downgrades scheduled at period end)
+  scheduledTier: v.optional(subscriptionTierValidator),
+  scheduledBillingInterval: v.optional(billingIntervalValidator),
+  scheduledPriceId: v.optional(v.string()),
+  stripeScheduleId: v.optional(v.string()), // Stripe subscription schedule ID
+  // First subscription start date (for 30-day money-back guarantee - never resets)
+  firstSubscriptionStart: v.optional(v.number()),
+  // Track if user has already used their one-time downgrade during the 30-day guarantee
+  // Prevents abuse of immediate refunds (Stripe fees are not returned on refunds)
+  hasDowngradedDuringGuarantee: v.optional(v.boolean()),
   // Timestamps
   createdAt: v.number(),
   updatedAt: v.number(),
@@ -196,6 +206,128 @@ export const workosProcessedEvents = defineTable({
 });
 
 // ============================================================
+// AUDIT LOGS (Enterprise Organizations Only)
+// ============================================================
+
+// Default retention period in days (1 year)
+export const DEFAULT_AUDIT_RETENTION_DAYS = 365;
+
+// Audit action categories for organizing events
+export const auditCategoryValidator = v.union(
+  v.literal('authentication'), // Login, logout, session events
+  v.literal('member'), // Member added, removed, role changed
+  v.literal('billing'), // Subscription, payment, plan changes
+  v.literal('settings'), // Organization settings changed
+  v.literal('security'), // Security settings, API keys, 2FA
+  v.literal('data'), // Data export, import, deletion
+  v.literal('integration'), // External integrations, webhooks
+);
+export type AuditCategory = Infer<typeof auditCategoryValidator>;
+
+// Specific audit action types
+export const auditActionValidator = v.union(
+  // Authentication actions
+  v.literal('user.login'),
+  v.literal('user.logout'),
+  v.literal('user.login_failed'),
+  v.literal('user.password_changed'),
+  v.literal('user.password_reset_requested'),
+  v.literal('user.mfa_enabled'),
+  v.literal('user.mfa_disabled'),
+  v.literal('user.session_revoked'),
+  // Member actions
+  v.literal('member.invited'),
+  v.literal('member.joined'),
+  v.literal('member.removed'),
+  v.literal('member.role_changed'),
+  v.literal('member.suspended'),
+  v.literal('member.reactivated'),
+  // Billing actions
+  v.literal('billing.subscription_created'),
+  v.literal('billing.subscription_updated'),
+  v.literal('billing.subscription_canceled'),
+  v.literal('billing.subscription_reactivated'),
+  v.literal('billing.plan_upgraded'),
+  v.literal('billing.plan_downgraded'),
+  v.literal('billing.payment_succeeded'),
+  v.literal('billing.payment_failed'),
+  v.literal('billing.invoice_generated'),
+  v.literal('billing.refund_issued'),
+  // Settings actions
+  v.literal('settings.organization_updated'),
+  v.literal('settings.domain_added'),
+  v.literal('settings.domain_removed'),
+  v.literal('settings.domain_verified'),
+  v.literal('settings.audit_retention_updated'),
+  // Security actions
+  v.literal('security.api_key_created'),
+  v.literal('security.api_key_revoked'),
+  v.literal('security.api_key_rotated'),
+  v.literal('security.sso_enabled'),
+  v.literal('security.sso_disabled'),
+  v.literal('security.ip_allowlist_updated'),
+  // Data actions
+  v.literal('data.exported'),
+  v.literal('data.imported'),
+  v.literal('data.deleted'),
+  v.literal('data.schema_created'),
+  v.literal('data.schema_updated'),
+  v.literal('data.schema_deleted'),
+  // Integration actions
+  v.literal('integration.webhook_created'),
+  v.literal('integration.webhook_updated'),
+  v.literal('integration.webhook_deleted'),
+  v.literal('integration.connected'),
+  v.literal('integration.disconnected'),
+);
+export type AuditAction = Infer<typeof auditActionValidator>;
+
+// Audit event status
+export const auditStatusValidator = v.union(v.literal('success'), v.literal('failure'), v.literal('pending'));
+export type AuditStatus = Infer<typeof auditStatusValidator>;
+
+// Audit logs table
+export const auditLogs = defineTable({
+  organizationId: v.id('organizations'),
+  // Actor information (who performed the action)
+  actorId: v.optional(v.id('users')), // Can be null for system actions
+  actorExternalId: v.optional(v.string()), // WorkOS user ID for reference
+  actorEmail: v.optional(v.string()), // Denormalized for fast display
+  actorName: v.optional(v.string()), // Denormalized for fast display
+  actorType: v.union(v.literal('user'), v.literal('system'), v.literal('api')),
+  // Action details
+  category: auditCategoryValidator,
+  action: auditActionValidator,
+  status: auditStatusValidator,
+  // Target information (what was affected)
+  targetType: v.optional(v.string()), // e.g., 'user', 'subscription', 'api_key'
+  targetId: v.optional(v.string()), // ID of the affected resource
+  targetName: v.optional(v.string()), // Human-readable name of the target
+  // Metadata for additional context
+  metadata: v.optional(v.record(v.string(), v.any())),
+  // Description for human-readable summary
+  description: v.string(),
+  // Request context (for security audit trail)
+  ipAddress: v.optional(v.string()),
+  userAgent: v.optional(v.string()),
+  // Timestamps
+  timestamp: v.number(), // When the event occurred
+  expiresAt: v.number(), // When this log should be deleted (TTL)
+});
+
+// Organization audit settings
+export const organizationAuditSettings = defineTable({
+  organizationId: v.id('organizations'),
+  // Retention period in days (default 365, future: upgradeable)
+  retentionDays: v.number(),
+  // Feature flags for future
+  isRetentionUpgradable: v.boolean(), // Can upgrade retention (paid feature)
+  // Timestamps
+  createdAt: v.number(),
+  updatedAt: v.number(),
+});
+
+// ============================================================
 // DEAD LETTER QUEUE FOR FAILED SYNCS
 // ============================================================
 
@@ -257,6 +389,21 @@ export default defineSchema({
   workosEventsCursor: workosEventsCursor.index('by_key', ['key']),
   // WorkOS processed events for idempotency
   workosProcessedEvents: workosProcessedEvents.index('by_event_id', ['eventId']),
+  // Audit logs (enterprise organizations only)
+  auditLogs: auditLogs
+    .index('by_organization', ['organizationId'])
+    .index('by_organization_and_timestamp', ['organizationId', 'timestamp'])
+    .index('by_organization_and_category', ['organizationId', 'category'])
+    .index('by_organization_and_action', ['organizationId', 'action'])
+    .index('by_organization_and_actor', ['organizationId', 'actorId'])
+    .index('by_organization_and_status', ['organizationId', 'status'])
+    .index('by_expires_at', ['expiresAt'])
+    .searchIndex('search_description', {
+      searchField: 'description',
+      filterFields: ['organizationId', 'category', 'status', 'actorId'],
+    }),
+  // Organization audit settings
+  organizationAuditSettings: organizationAuditSettings.index('by_organization', ['organizationId']),
 });
 
 export const user = users.validator;
@@ -281,3 +428,10 @@ export type SyncStatus = Infer<typeof syncStatusValidator>;
 export type WebhookEvent = Infer<typeof webhookEventValidator>;
 export type Languages = Infer<typeof languageValidator>;
 export type Metadata = Infer<typeof metadataValidator>;
+
+// Audit log types
+export const auditLog = auditLogs.validator;
+export type AuditLog = Infer<typeof auditLog>;
+
+export const organizationAuditSetting = organizationAuditSettings.validator;
+export type OrganizationAuditSetting = Infer<typeof organizationAuditSetting>;

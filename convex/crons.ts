@@ -21,4 +21,14 @@ crons.interval(
   {},
 );
 
+// ============================================================
+// AUDIT LOG CLEANUP
+// ============================================================
+
+// Run audit log cleanup daily to remove expired logs based on organization TTL settings.
+// The cleanup mutation handles batching to avoid timeouts with large datasets.
+crons.interval('cleanup-expired-audit-logs', { hours: 24 }, internal.audit.internal.mutation.cleanupExpiredAuditLogs, {
+  batchSize: 500,
+});
+
 export default crons;

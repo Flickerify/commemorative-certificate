@@ -34,6 +34,8 @@ import {
   IconRefresh,
   IconShieldCheck,
   IconCash,
+  IconArrowDown,
+  IconX,
 } from '@tabler/icons-react';
 import { toast } from 'sonner';
 
@@ -163,8 +165,19 @@ export function SubscriptionCard({ organizationId }: SubscriptionCardProps) {
           </div>
         )}
 
-        {/* Cancel warning */}
-        {subscription.cancelAtPeriodEnd && (subscription.cancelAt || subscription.currentPeriodEnd) && (
+        {/* Scheduled plan change (downgrade) */}
+        {'hasScheduledChange' in subscription && subscription.hasScheduledChange && subscription.scheduledTier && (
+          <ScheduledPlanChangeCard
+            organizationId={organizationId}
+            currentTier={subscription.tier}
+            scheduledTier={subscription.scheduledTier}
+            scheduledBillingInterval={subscription.scheduledBillingInterval}
+            effectiveDate={subscription.currentPeriodEnd}
+          />
+        )}
+
+        {/* Cancel warning (only show if no scheduled change) */}
+        {subscription.cancelAtPeriodEnd && !('hasScheduledChange' in subscription && subscription.hasScheduledChange) && (subscription.cancelAt || subscription.currentPeriodEnd) && (
           <div className="flex items-center gap-2 rounded-lg bg-amber-500/10 p-3 text-sm text-amber-600 dark:text-amber-400">
             <IconAlertTriangle className="h-4 w-4 shrink-0" />
             <span>
@@ -456,6 +469,111 @@ function formatFeatureName(feature: string): string {
     .split('_')
     .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
     .join(' ');
+}
+
+// ============================================================
+// SCHEDULED PLAN CHANGE CARD
+// ============================================================
+
+interface ScheduledPlanChangeCardProps {
+  organizationId: Id<'organizations'>;
+  currentTier: 'personal' | 'pro' | 'enterprise';
+  scheduledTier: 'personal' | 'pro' | 'enterprise';
+  scheduledBillingInterval?: 'month' | 'year';
+  effectiveDate?: number;
+}
+
+function ScheduledPlanChangeCard({
+  organizationId,
+  currentTier,
+  scheduledTier,
+  scheduledBillingInterval,
+  effectiveDate,
+}: ScheduledPlanChangeCardProps) {
+  const [isCanceling, setIsCanceling] = useState(false);
+  const cancelScheduledDowngrade = useAction(api.billing.action.cancelScheduledDowngrade);
+
+  const handleCancelDowngrade = async () => {
+    setIsCanceling(true);
+    try {
+      const result = await cancelScheduledDowngrade({ organizationId });
+      if (result.success) {
+        toast.success('Scheduled change canceled', {
+          description: result.message,
+        });
+        // Refresh the page to show updated subscription status
+        window.location.reload();
+      } else {
+        toast.error('Failed to cancel', {
+          description: result.message,
+        });
+      }
+    } catch (error) {
+      console.error('Failed to cancel scheduled downgrade:', error);
+      toast.error('Failed to cancel scheduled change', {
+        description: error instanceof Error ? error.message : 'Please try again',
+      });
+    } finally {
+      setIsCanceling(false);
+    }
+  };
+
+  const scheduledConfig = tierConfig[scheduledTier];
+  const ScheduledIcon = scheduledConfig.icon;
+
+  return (
+    <div className="rounded-lg border border-blue-500/30 bg-blue-500/10 p-4">
+      <div className="flex items-start justify-between gap-3">
+        <div className="flex items-start gap-3">
+          <div className="rounded-full bg-blue-500/20 p-2">
+            <IconArrowDown className="h-4 w-4 text-blue-600 dark:text-blue-400" />
+          </div>
+          <div className="flex-1 space-y-2">
+            <p className="font-medium text-blue-700 dark:text-blue-300">Scheduled plan change</p>
+            <p className="text-sm text-blue-600/80 dark:text-blue-400/80">
+              Your subscription will change from{' '}
+              <span className="font-medium capitalize">{currentTier}</span> to{' '}
+              <span className="font-medium capitalize">{scheduledTier}</span>
+              {scheduledBillingInterval && (
+                <span className="text-muted-foreground">
+                  {' '}({scheduledBillingInterval}ly billing)
+                </span>
+              )}
+              {effectiveDate && (
+                <span> on {new Date(effectiveDate).toLocaleDateString()}</span>
+              )}
+              .
+            </p>
+            <div className="flex items-center gap-2 pt-1">
+              <div className={`rounded p-1 ${scheduledConfig.color} text-white`}>
+                <ScheduledIcon className="h-3 w-3" />
+              </div>
+              <span className="text-xs text-muted-foreground">
+                Next billing cycle: {scheduledConfig.name}
+                {scheduledBillingInterval && ` (${scheduledBillingInterval}ly)`}
+              </span>
+            </div>
+          </div>
+        </div>
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={handleCancelDowngrade}
+          disabled={isCanceling}
+          className="shrink-0 border-blue-500/50 text-blue-700 hover:bg-blue-500/10 dark:text-blue-400"
+        >
+          {isCanceling ? (
+            <IconLoader2 className="h-4 w-4 animate-spin" />
+          ) : (
+            <>
+              <IconX className="mr-1 h-4 w-4" />
+              Keep current plan
+            </>
+          )}
+        </Button>
+      </div>
+    </div>
+  );
 }
 
 // ============================================================

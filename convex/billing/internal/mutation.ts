@@ -1,6 +1,7 @@
 import { v } from 'convex/values';
 import { internalMutation } from '../../functions';
 import { TIER_SEAT_LIMITS, subscriptionStatusValidator } from '../../schema';
+import type { AuditAction } from '../../schema';
 import { internal } from '../../_generated/api';
 
 // Retry configuration for Stripe customer binding
@@ -214,6 +215,9 @@ export const syncSubscriptionData = internalMutation({
         cancelAt: v.optional(v.number()), // Stripe's scheduled cancellation timestamp
         paymentMethodBrand: v.optional(v.string()),
         paymentMethodLast4: v.optional(v.string()),
+        // Scheduled plan changes (for downgrades)
+        scheduledPriceId: v.optional(v.string()),
+        stripeScheduleId: v.optional(v.string()),
       }),
       v.object({
         status: v.literal('none'),
@@ -275,6 +279,20 @@ export const syncSubscriptionData = internalMutation({
       return null; // Should never happen, but TypeScript needs this
     }
 
+    // Handle scheduled plan changes (for downgrades)
+    let scheduledTier: 'personal' | 'pro' | 'enterprise' | undefined;
+    let scheduledBillingInterval: 'month' | 'year' | undefined;
+
+    if (subscription.scheduledPriceId) {
+      scheduledTier = getTierFromPriceId(subscription.scheduledPriceId);
+      scheduledBillingInterval = getBillingIntervalFromPriceId(subscription.scheduledPriceId);
+    }
+
+    // Track firstSubscriptionStart - only set once, never reset
+    // This is crucial for the 30-day money-back guarantee
+    const firstSubscriptionStart =
+      existingSubscription?.firstSubscriptionStart ?? subscription.currentPeriodStart * 1000;
+
     const subscriptionData = {
       organizationId,
       stripeCustomerId: args.stripeCustomerId,
@@ -293,8 +311,19 @@ export const syncSubscriptionData = internalMutation({
       // Clear pending checkout state since we now have a real subscription
       pendingCheckoutSessionId: undefined,
       pendingPriceId: undefined,
+      // Scheduled plan changes (for downgrades at period end)
+      scheduledTier,
+      scheduledBillingInterval,
+      scheduledPriceId: subscription.scheduledPriceId,
+      stripeScheduleId: subscription.stripeScheduleId,
+      // First subscription start (never resets - for 30-day guarantee)
+      firstSubscriptionStart,
       updatedAt: now,
     };
+
+    const isNewSubscription = !existingSubscription;
+    const previousTier = existingSubscription?.tier;
+    const previousStatus = existingSubscription?.status;
 
     if (existingSubscription) {
       await ctx.db.patch(existingSubscription._id, subscriptionData);
@@ -303,6 +332,67 @@ export const syncSubscriptionData = internalMutation({
         ...subscriptionData,
         createdAt: now,
       });
+    }
+
+    // Log audit event for subscription changes
+    const logSubscriptionAudit = async (
+      action: AuditAction,
+      description: string,
+      metadata?: Record<string, unknown>,
+    ) => {
+      try {
+        await ctx.scheduler.runAfter(0, internal.audit.internal.mutation.logAuditEvent, {
+          organizationId,
+          actorType: 'system' as const,
+          actorName: 'Stripe',
+          category: 'billing' as const,
+          action,
+          status: 'success' as const,
+          targetType: 'subscription',
+          targetId: subscriptionId,
+          description,
+          metadata,
+        });
+      } catch (error) {
+        console.error('[Audit] Failed to log billing audit event:', error);
+      }
+    };
+
+    // Determine which audit event to log
+    if (isNewSubscription) {
+      await logSubscriptionAudit('billing.subscription_created', `New ${tier} subscription created`, {
+        tier,
+        status: subscription.status,
+        billingInterval,
+      });
+    } else if (previousTier && previousTier !== tier) {
+      const isUpgrade =
+        (previousTier === 'personal' && (tier === 'pro' || tier === 'enterprise')) ||
+        (previousTier === 'pro' && tier === 'enterprise');
+      await logSubscriptionAudit(
+        isUpgrade ? 'billing.plan_upgraded' : 'billing.plan_downgraded',
+        `Subscription ${isUpgrade ? 'upgraded' : 'downgraded'} from ${previousTier} to ${tier}`,
+        { previousTier, newTier: tier, billingInterval },
+      );
+    } else if (previousStatus !== subscription.status) {
+      if (subscription.status === 'canceled') {
+        await logSubscriptionAudit('billing.subscription_canceled', 'Subscription was canceled', {
+          tier,
+          cancelAtPeriodEnd: subscription.cancelAtPeriodEnd,
+        });
+      } else if (previousStatus === 'canceled' && subscription.status === 'active') {
+        await logSubscriptionAudit('billing.subscription_reactivated', 'Subscription was reactivated', { tier });
+      } else {
+        await logSubscriptionAudit(
+          'billing.subscription_updated',
+          `Subscription status changed to ${subscription.status}`,
+          {
+            tier,
+            previousStatus,
+            newStatus: subscription.status,
+          },
+        );
+      }
     }
 
     // Sync subscription tier to PlanetScale - use the active subscription if available
@@ -331,6 +421,35 @@ export const syncSubscriptionData = internalMutation({
           | 'unpaid'
           | 'none',
       });
+    }
+
+    return null;
+  },
+});
+
+/**
+ * Mark that a user has used their one-time immediate downgrade during the guarantee period.
+ * This prevents abuse where users upgrade/downgrade repeatedly to game Stripe fees.
+ */
+export const markDowngradeDuringGuarantee = internalMutation({
+  args: {
+    organizationId: v.id('organizations'),
+  },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    const subscription = await ctx.db
+      .query('organizationSubscriptions')
+      .withIndex('by_organization', (q) => q.eq('organizationId', args.organizationId))
+      .first();
+
+    if (subscription) {
+      await ctx.db.patch(subscription._id, {
+        hasDowngradedDuringGuarantee: true,
+        updatedAt: Date.now(),
+      });
+      console.log(
+        `[Billing] Marked organization ${args.organizationId} as having used their guarantee downgrade`,
+      );
     }
 
     return null;

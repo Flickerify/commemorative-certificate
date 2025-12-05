@@ -72,11 +72,14 @@ const adminBaseItems = [
 // Items that require Pro+ (team features)
 const adminTeamItems = [{ href: '/administration/team', icon: UsersIcon, label: 'Team Members' }];
 
+// Security items available to all paid plans
 const adminSecurityItems = [
   { href: '/administration/security', icon: Shield, label: 'Security Settings' },
   { href: '/administration/apikeys', icon: Key, label: 'API Keys' },
-  { href: '/administration/audit', icon: Activity, label: 'Audit Logs' },
 ];
+
+// Enterprise-only items
+const adminEnterpriseItems = [{ href: '/administration/audit', icon: Activity, label: 'Audit Logs' }];
 
 const accountItems = [
   { href: '/account/profile', icon: User, label: 'Profile' },
@@ -137,6 +140,59 @@ function LockedNavLink({ icon: Icon, label, onClick }: { icon: typeof Database; 
   );
 }
 
+function EnterpriseNavLink({
+  href,
+  icon: Icon,
+  label,
+  isActive,
+  isEnterprise,
+  onClick,
+  onUpgradeClick,
+}: {
+  href: string;
+  icon: typeof Database;
+  label: string;
+  isActive: boolean;
+  isEnterprise: boolean;
+  onClick?: () => void;
+  onUpgradeClick?: () => void;
+}) {
+  if (isEnterprise) {
+    return (
+      <Link
+        href={href}
+        onClick={onClick}
+        className={cn(
+          'flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors',
+          isActive
+            ? 'bg-sidebar-accent text-sidebar-accent-foreground font-medium'
+            : 'text-sidebar-foreground hover:bg-sidebar-accent',
+        )}
+      >
+        <Icon className="h-4 w-4" />
+        <span className="flex-1">{label}</span>
+        <span className="text-[9px] font-medium px-1.5 py-0.5 rounded bg-violet-100 text-violet-700 dark:bg-violet-500/20 dark:text-violet-400">
+          Enterprise
+        </span>
+      </Link>
+    );
+  }
+
+  return (
+    <button
+      onClick={onUpgradeClick}
+      className="flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors text-sidebar-muted hover:bg-sidebar-accent/50 w-full text-left group"
+    >
+      <Icon className="h-4 w-4" />
+      <span className="flex-1">{label}</span>
+      <span className="flex items-center gap-1 text-[9px] font-medium px-1.5 py-0.5 rounded bg-violet-100 text-violet-700 dark:bg-violet-500/20 dark:text-violet-400 opacity-80 group-hover:opacity-100">
+        <Lock className="h-2.5 w-2.5" />
+        Enterprise
+      </span>
+    </button>
+  );
+}
+
 export function NavigationSidebar({ activeSpace, isMobileOpen, onMobileClose, isNavOpen }: NavigationSidebarProps) {
   const pathname = usePathname();
   const router = useRouter();
@@ -145,8 +201,9 @@ export function NavigationSidebar({ activeSpace, isMobileOpen, onMobileClose, is
   // Fetch current organization (includes subscriptionTier from source of truth)
   const organization = useQuery(api.organizations.query.getCurrent, organizationId ? { organizationId } : 'skip');
 
-  // Check if personal workspace based on subscription tier (source of truth)
+  // Check subscription tiers
   const isPersonalWorkspace = organization?.subscriptionTier === 'personal';
+  const isEnterprise = organization?.subscriptionTier === 'enterprise';
 
   const isActive = (href: string) => pathname === href || pathname.startsWith(href + '/');
 
@@ -275,6 +332,19 @@ export function NavigationSidebar({ activeSpace, isMobileOpen, onMobileClose, is
                     label={item.label}
                     isActive={isActive(item.href)}
                     onClick={onMobileClose}
+                  />
+                ))}
+                {/* Enterprise-only items */}
+                {adminEnterpriseItems.map((item) => (
+                  <EnterpriseNavLink
+                    key={item.href}
+                    href={item.href}
+                    icon={item.icon}
+                    label={item.label}
+                    isActive={isActive(item.href)}
+                    isEnterprise={isEnterprise}
+                    onClick={onMobileClose}
+                    onUpgradeClick={handleUpgradeClick}
                   />
                 ))}
               </nav>

@@ -118,6 +118,34 @@ export const getStripeCustomer = internalQuery({
 });
 
 /**
+ * Check if user has already used their one-time immediate downgrade during guarantee period.
+ * This prevents abuse of Stripe fees (which aren't returned on refunds).
+ */
+export const getSubscriptionDowngradeStatus = internalQuery({
+  args: {
+    organizationId: v.id('organizations'),
+  },
+  returns: v.union(
+    v.object({
+      hasDowngradedDuringGuarantee: v.boolean(),
+    }),
+    v.null(),
+  ),
+  handler: async (ctx, args) => {
+    const subscription = await ctx.db
+      .query('organizationSubscriptions')
+      .withIndex('by_organization', (q) => q.eq('organizationId', args.organizationId))
+      .first();
+
+    if (!subscription) return null;
+
+    return {
+      hasDowngradedDuringGuarantee: subscription.hasDowngradedDuringGuarantee ?? false,
+    };
+  },
+});
+
+/**
  * Get subscription for an organization.
  * Returns the subscription object or null if no subscription exists (personal workspace).
  *
@@ -151,9 +179,13 @@ export const getOrganizationSubscription = protectedQuery({
       hasActiveSubscription: v.boolean(),
       isPersonalWorkspace: v.literal(false),
       isPendingSetup: v.literal(false),
-      // Money-back guarantee info
+      // Money-back guarantee info (based on FIRST subscription start, never resets)
       isWithinGuaranteePeriod: v.boolean(),
       guaranteeDaysRemaining: v.optional(v.number()),
+      // Scheduled plan change (for downgrades at period end)
+      scheduledTier: v.optional(v.union(v.literal('personal'), v.literal('pro'), v.literal('enterprise'))),
+      scheduledBillingInterval: v.optional(v.union(v.literal('month'), v.literal('year'))),
+      hasScheduledChange: v.boolean(),
     }),
     // Personal workspace (no subscription) - legacy, should not happen with new signup flow
     v.object({
@@ -184,15 +216,22 @@ export const getOrganizationSubscription = protectedQuery({
     const activeSubscription = await findActiveSubscription(ctx.db, args.organizationId);
 
     if (activeSubscription) {
-      // Calculate money-back guarantee period (30 days from subscription start)
+      // Calculate money-back guarantee period (30 days from FIRST subscription start - never resets)
       const GUARANTEE_DAYS = 30;
       const now = Date.now();
-      const subscriptionStart = activeSubscription.currentPeriodStart ?? activeSubscription.createdAt;
+      // Use firstSubscriptionStart if available, otherwise fall back to currentPeriodStart or createdAt
+      const subscriptionStart =
+        activeSubscription.firstSubscriptionStart ??
+        activeSubscription.currentPeriodStart ??
+        activeSubscription.createdAt;
       const guaranteeEndMs = subscriptionStart + GUARANTEE_DAYS * 24 * 60 * 60 * 1000;
       const isWithinGuaranteePeriod = now < guaranteeEndMs;
       const guaranteeDaysRemaining = isWithinGuaranteePeriod
         ? Math.max(0, Math.ceil((guaranteeEndMs - now) / (1000 * 60 * 60 * 24)))
         : undefined;
+
+      // Check for scheduled plan changes
+      const hasScheduledChange = !!(activeSubscription.scheduledTier || activeSubscription.scheduledBillingInterval);
 
       return {
         isPersonalWorkspace: false as const,
@@ -211,6 +250,10 @@ export const getOrganizationSubscription = protectedQuery({
         hasActiveSubscription: true as const,
         isWithinGuaranteePeriod,
         guaranteeDaysRemaining,
+        // Scheduled plan change info
+        scheduledTier: activeSubscription.scheduledTier as 'personal' | 'pro' | 'enterprise' | undefined,
+        scheduledBillingInterval: activeSubscription.scheduledBillingInterval as 'month' | 'year' | undefined,
+        hasScheduledChange,
       };
     }
 
@@ -268,6 +311,7 @@ export const getOrganizationSubscription = protectedQuery({
       features: getFeaturesForTier(mostRecentSubscription.tier),
       hasActiveSubscription: false as const,
       isWithinGuaranteePeriod: false,
+      hasScheduledChange: false,
     };
   },
 });

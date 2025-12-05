@@ -65,6 +65,11 @@ export default function TeamPage() {
     organizationId ? { organizationId } : 'skip'
   );
 
+  const isOwner = useQuery(
+    api.organizations.query.isOwner,
+    organizationId ? { organizationId } : 'skip'
+  );
+
   // Actions
   const inviteMember = useAction(api.organizations.action.inviteMember);
   const removeMember = useAction(api.organizations.action.removeMember);
@@ -253,10 +258,13 @@ export default function TeamPage() {
                 <SelectContent>
                   <SelectItem value="member">Member</SelectItem>
                   <SelectItem value="admin">Admin</SelectItem>
+                  {isOwner && <SelectItem value="owner">Owner</SelectItem>}
                 </SelectContent>
               </Select>
               <p className="text-xs text-muted-foreground">
-                Admins can manage team members and organization settings.
+                {inviteRole === 'owner' 
+                  ? 'Owners have full control including billing and can invite other owners.'
+                  : 'Admins can manage team members and organization settings.'}
               </p>
             </div>
             {inviteError && <p className="text-sm text-destructive">{inviteError}</p>}
