@@ -16,10 +16,17 @@ import type * as billing_action from "../billing/action.js";
 import type * as billing_internal_mutation from "../billing/internal/mutation.js";
 import type * as billing_query from "../billing/query.js";
 import type * as billing_stripe from "../billing/stripe.js";
+import type * as controllers_resendWebhooksController from "../controllers/resendWebhooksController.js";
 import type * as controllers_stripeWebhooksController from "../controllers/stripeWebhooksController.js";
 import type * as controllers_workosActionsController from "../controllers/workosActionsController.js";
 import type * as controllers_workosWebhooksController from "../controllers/workosWebhooksController.js";
 import type * as crons from "../crons.js";
+import type * as enterpriseInquiry_action from "../enterpriseInquiry/action.js";
+import type * as enterpriseInquiry_email from "../enterpriseInquiry/email.js";
+import type * as enterpriseInquiry_internal_mutation from "../enterpriseInquiry/internal/mutation.js";
+import type * as enterpriseInquiry_internal_query from "../enterpriseInquiry/internal/query.js";
+import type * as enterpriseInquiry_mutation from "../enterpriseInquiry/mutation.js";
+import type * as enterpriseInquiry_query from "../enterpriseInquiry/query.js";
 import type * as env from "../env.js";
 import type * as functions from "../functions.js";
 import type * as http from "../http.js";
@@ -72,10 +79,17 @@ const fullApi: ApiFromModules<{
   "billing/internal/mutation": typeof billing_internal_mutation;
   "billing/query": typeof billing_query;
   "billing/stripe": typeof billing_stripe;
+  "controllers/resendWebhooksController": typeof controllers_resendWebhooksController;
   "controllers/stripeWebhooksController": typeof controllers_stripeWebhooksController;
   "controllers/workosActionsController": typeof controllers_workosActionsController;
   "controllers/workosWebhooksController": typeof controllers_workosWebhooksController;
   crons: typeof crons;
+  "enterpriseInquiry/action": typeof enterpriseInquiry_action;
+  "enterpriseInquiry/email": typeof enterpriseInquiry_email;
+  "enterpriseInquiry/internal/mutation": typeof enterpriseInquiry_internal_mutation;
+  "enterpriseInquiry/internal/query": typeof enterpriseInquiry_internal_query;
+  "enterpriseInquiry/mutation": typeof enterpriseInquiry_mutation;
+  "enterpriseInquiry/query": typeof enterpriseInquiry_query;
   env: typeof env;
   functions: typeof functions;
   http: typeof http;
@@ -1011,6 +1025,135 @@ export const components = componentsGeneric() as unknown as {
           | { previousAttempts: number; state: "running" }
           | { state: "finished" }
         >
+      >;
+    };
+  };
+  resend: {
+    lib: {
+      cancelEmail: FunctionReference<
+        "mutation",
+        "internal",
+        { emailId: string },
+        null
+      >;
+      cleanupAbandonedEmails: FunctionReference<
+        "mutation",
+        "internal",
+        { olderThan?: number },
+        null
+      >;
+      cleanupOldEmails: FunctionReference<
+        "mutation",
+        "internal",
+        { olderThan?: number },
+        null
+      >;
+      createManualEmail: FunctionReference<
+        "mutation",
+        "internal",
+        {
+          from: string;
+          headers?: Array<{ name: string; value: string }>;
+          replyTo?: Array<string>;
+          subject: string;
+          to: string;
+        },
+        string
+      >;
+      get: FunctionReference<
+        "query",
+        "internal",
+        { emailId: string },
+        {
+          complained: boolean;
+          createdAt: number;
+          errorMessage?: string;
+          finalizedAt: number;
+          from: string;
+          headers?: Array<{ name: string; value: string }>;
+          html?: string;
+          opened: boolean;
+          replyTo: Array<string>;
+          resendId?: string;
+          segment: number;
+          status:
+            | "waiting"
+            | "queued"
+            | "cancelled"
+            | "sent"
+            | "delivered"
+            | "delivery_delayed"
+            | "bounced"
+            | "failed";
+          subject: string;
+          text?: string;
+          to: string;
+        } | null
+      >;
+      getStatus: FunctionReference<
+        "query",
+        "internal",
+        { emailId: string },
+        {
+          complained: boolean;
+          errorMessage: string | null;
+          opened: boolean;
+          status:
+            | "waiting"
+            | "queued"
+            | "cancelled"
+            | "sent"
+            | "delivered"
+            | "delivery_delayed"
+            | "bounced"
+            | "failed";
+        } | null
+      >;
+      handleEmailEvent: FunctionReference<
+        "mutation",
+        "internal",
+        { event: any },
+        null
+      >;
+      sendEmail: FunctionReference<
+        "mutation",
+        "internal",
+        {
+          from: string;
+          headers?: Array<{ name: string; value: string }>;
+          html?: string;
+          options: {
+            apiKey: string;
+            initialBackoffMs: number;
+            onEmailEvent?: { fnHandle: string };
+            retryAttempts: number;
+            testMode: boolean;
+          };
+          replyTo?: Array<string>;
+          subject: string;
+          text?: string;
+          to: string;
+        },
+        string
+      >;
+      updateManualEmail: FunctionReference<
+        "mutation",
+        "internal",
+        {
+          emailId: string;
+          errorMessage?: string;
+          resendId?: string;
+          status:
+            | "waiting"
+            | "queued"
+            | "cancelled"
+            | "sent"
+            | "delivered"
+            | "delivery_delayed"
+            | "bounced"
+            | "failed";
+        },
+        null
       >;
     };
   };

@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import Link from 'next/link';
 import type { Id } from '@/convex/_generated/dataModel';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -214,10 +215,10 @@ export function PricingTable({
                 {/* Features */}
                 <ul className="space-y-2">
                   {features.map((feature) => (
-                      <li key={feature} className="flex items-start gap-2 text-sm">
-                            <IconCheck className="h-4 w-4 text-emerald-500 mt-0.5 shrink-0" />
-                            <span>{feature}</span>
-                      </li>
+                    <li key={feature} className="flex items-start gap-2 text-sm">
+                      <IconCheck className="h-4 w-4 text-emerald-500 mt-0.5 shrink-0" />
+                      <span>{feature}</span>
+                    </li>
                   ))}
                 </ul>
               </CardContent>
@@ -226,6 +227,11 @@ export function PricingTable({
                 {isCurrentPlan ? (
                   <Button variant="outline" className="w-full" disabled>
                     Current Plan
+                  </Button>
+                ) : plan.id === 'enterprise' ? (
+                  // Enterprise tier - link to contact sales page
+                  <Button asChild className="w-full" variant="outline">
+                    <Link href="/administration/billing/request/new">Contact Sales</Link>
                   </Button>
                 ) : isIntervalSwitch && organizationId && priceId ? (
                   // Same tier but different interval - show switch option

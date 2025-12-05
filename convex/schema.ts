@@ -328,6 +328,67 @@ export const organizationAuditSettings = defineTable({
 });
 
 // ============================================================
+// ENTERPRISE INQUIRY REQUESTS
+// ============================================================
+
+export const enterpriseInquiryStatusValidator = v.union(
+  v.literal('pending'),
+  v.literal('contacted'),
+  v.literal('approved'),
+  v.literal('rejected'),
+  v.literal('converted'),
+);
+export type EnterpriseInquiryStatus = Infer<typeof enterpriseInquiryStatusValidator>;
+
+export const companySizeValidator = v.union(
+  v.literal('1-10'),
+  v.literal('11-50'),
+  v.literal('51-200'),
+  v.literal('201-500'),
+  v.literal('501-1000'),
+  v.literal('1000+'),
+);
+export type CompanySize = Infer<typeof companySizeValidator>;
+
+export const enterpriseInquiries = defineTable({
+  // Contact information
+  firstName: v.string(),
+  lastName: v.string(),
+  email: v.string(),
+  phone: v.optional(v.string()),
+  jobTitle: v.string(),
+  // Company information
+  companyName: v.string(),
+  companyWebsite: v.optional(v.string()),
+  companySize: companySizeValidator,
+  industry: v.string(),
+  // Requirements
+  expectedUsers: v.number(),
+  useCase: v.string(),
+  currentSolution: v.optional(v.string()),
+  timeline: v.string(),
+  budget: v.optional(v.string()),
+  additionalRequirements: v.optional(v.string()),
+  // Features of interest
+  interestedFeatures: v.array(v.string()),
+  // Status tracking
+  status: enterpriseInquiryStatusValidator,
+  // Admin response
+  adminNotes: v.optional(v.string()),
+  respondedAt: v.optional(v.number()),
+  respondedBy: v.optional(v.id('users')),
+  // Optional: Link to organization if user is logged in
+  userId: v.optional(v.id('users')),
+  organizationId: v.optional(v.id('organizations')),
+  // Email tracking
+  confirmationEmailSent: v.boolean(),
+  adminNotificationSent: v.boolean(),
+  // Timestamps
+  createdAt: v.number(),
+  updatedAt: v.number(),
+});
+
+// ============================================================
 // DEAD LETTER QUEUE FOR FAILED SYNCS
 // ============================================================
 
@@ -404,6 +465,12 @@ export default defineSchema({
     }),
   // Organization audit settings
   organizationAuditSettings: organizationAuditSettings.index('by_organization', ['organizationId']),
+  // Enterprise inquiry requests
+  enterpriseInquiries: enterpriseInquiries
+    .index('by_status', ['status'])
+    .index('by_email', ['email'])
+    .index('by_organization', ['organizationId'])
+    .index('by_created_at', ['createdAt']),
 });
 
 export const user = users.validator;
@@ -435,3 +502,7 @@ export type AuditLog = Infer<typeof auditLog>;
 
 export const organizationAuditSetting = organizationAuditSettings.validator;
 export type OrganizationAuditSetting = Infer<typeof organizationAuditSetting>;
+
+// Enterprise inquiry types
+export const enterpriseInquiry = enterpriseInquiries.validator;
+export type EnterpriseInquiry = Infer<typeof enterpriseInquiry>;

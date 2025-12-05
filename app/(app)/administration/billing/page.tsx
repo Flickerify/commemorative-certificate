@@ -1,13 +1,13 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { useQuery, useAction } from 'convex/react';
 import { api } from '@/convex/_generated/api';
 import { useAuth } from '@workos-inc/authkit-nextjs/components';
 import { PageShell } from '@/components/dashboard/page-shell';
 import { SubscriptionCard } from '@/components/billing/subscription-card';
-import { PricingTable, PricingTableSkeleton } from '@/components/billing/pricing-table';
+import { PricingTable } from '@/components/billing/pricing-table';
 import { BillingPortalButton } from '@/components/billing/billing-portal-button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
@@ -30,10 +30,6 @@ import {
   IconFileInvoice,
   IconRefresh,
   IconClock,
-  IconPlayerPlay,
-  IconPlayerPause,
-  IconArrowUp,
-  IconArrowDown,
   IconCurrencyDollar,
   IconRotateClockwise,
   IconCalendar,
@@ -44,10 +40,15 @@ import { cn } from '@/lib/utils';
 export default function BillingPage() {
   const searchParams = useSearchParams();
   const { organizationId } = useAuth();
-  const [showSuccess, setShowSuccess] = useState(false);
-  const [showCanceled, setShowCanceled] = useState(false);
+
+  // Initialize state from URL params to avoid calling setState in effect
+  const [showSuccess, setShowSuccess] = useState(() => searchParams.get('success') === 'true');
+  const [showCanceled, setShowCanceled] = useState(() => searchParams.get('canceled') === 'true');
   const [activeTab, setActiveTab] = useState('subscription');
   const [isLoadingHistory, setIsLoadingHistory] = useState(false);
+
+  // Track if we've already processed the URL params
+  const hasProcessedParams = useRef(false);
 
   // Get the organization from Convex using the WorkOS organizationId
   const organizations = useQuery(api.organizations.query.getOrganizationsByUserId);
@@ -125,10 +126,13 @@ export default function BillingPage() {
 
   const [billingData, setBillingData] = useState<BillingData | null>(null);
 
-  // Check for success/canceled params and sync
+  // Handle success/canceled params side effects
   useEffect(() => {
-    if (searchParams.get('success') === 'true') {
-      setShowSuccess(true);
+    // Skip if already processed
+    if (hasProcessedParams.current) return;
+
+    if (showSuccess) {
+      hasProcessedParams.current = true;
 
       // Sync subscription data after successful checkout
       if (currentOrg?._id) {
@@ -140,30 +144,33 @@ export default function BillingPage() {
       return () => clearTimeout(timeout);
     }
 
-    if (searchParams.get('canceled') === 'true') {
-      setShowCanceled(true);
+    if (showCanceled) {
+      hasProcessedParams.current = true;
       const timeout = setTimeout(() => setShowCanceled(false), 5000);
       return () => clearTimeout(timeout);
     }
-  }, [searchParams, currentOrg?._id, syncAfterCheckout]);
+  }, [showSuccess, showCanceled, currentOrg?._id, syncAfterCheckout]);
 
-  // Load billing data when tab changes
-  useEffect(() => {
-    if (activeTab === 'history' && currentOrg?._id && !billingData) {
+  // Load billing data function - used by tab change and refresh
+  const loadBillingData = (forceRefresh = false) => {
+    if (currentOrg?._id && !isLoadingHistory && (forceRefresh || !billingData)) {
       setIsLoadingHistory(true);
       getCompleteBillingData({ organizationId: currentOrg._id as Id<'organizations'> })
         .then(setBillingData)
         .finally(() => setIsLoadingHistory(false));
     }
-  }, [activeTab, currentOrg?._id, getCompleteBillingData, billingData]);
+  };
+
+  // Handle tab change - load billing data when switching to history tab
+  const handleTabChange = (newTab: string) => {
+    setActiveTab(newTab);
+    if (newTab === 'history' && currentOrg?._id && !billingData) {
+      loadBillingData();
+    }
+  };
 
   const refreshHistory = () => {
-    if (currentOrg?._id) {
-      setIsLoadingHistory(true);
-      getCompleteBillingData({ organizationId: currentOrg._id as Id<'organizations'> })
-        .then(setBillingData)
-        .finally(() => setIsLoadingHistory(false));
-    }
+    loadBillingData(true);
   };
 
   const isLoading = organizations === undefined || (currentOrg && subscription === undefined);
@@ -224,7 +231,7 @@ export default function BillingPage() {
         {isLoading ? (
           <BillingPageSkeleton />
         ) : currentOrg && !isPersonalWorkspace ? (
-          <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
+          <Tabs value={activeTab} onValueChange={handleTabChange} className="space-y-6">
             <TabsList className="grid w-full max-w-md grid-cols-3">
               <TabsTrigger value="subscription" className="gap-2">
                 <IconCreditCard className="h-4 w-4" />
