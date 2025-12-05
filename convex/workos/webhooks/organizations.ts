@@ -1,95 +1,30 @@
 import type { WorkosHonoEnv } from '../../types';
 
-import { ConvexError } from 'convex/values';
 import { Context } from 'hono';
 
 import { internal } from '../../_generated/api';
-import { Id } from '../../_generated/dataModel';
 
+/**
+ * Handle organization webhooks from WorkOS.
+ *
+ * IMPORTANT: Respond immediately with 200 OK, then process async.
+ * Per WorkOS docs: "respond to a webhook request with a 200 OK response
+ * as quickly as possible once received"
+ */
 export async function handleOrganizationWebhooks(ctx: Context<WorkosHonoEnv>) {
   const event = ctx.var.workosEvent;
-  let convexId: Id<'organizations'>;
 
-  try {
-    switch (event.event) {
-      case 'organization.created':
-        convexId = await ctx.env.runMutation(internal.organizations.internal.mutation.upsertFromWorkos, {
-          externalId: event.data.id,
-          name: event.data.name,
-          metadata: event.data.metadata,
-          domains: event.data.domains.map((domain) => {
-            return {
-              domain: domain.domain,
-              externalId: domain.id,
-              status: domain.state as 'verified' | 'pending' | 'failed',
-            };
-          }),
-        });
+  // Schedule async processing - await the scheduling (not the processing)
+  // The scheduler call itself is fast, the actual processing happens async
+  await ctx.env.scheduler.runAfter(0, internal.workos.events.process.processWebhookEvent, {
+    eventId: event.id,
+    eventType: event.event,
+    eventData: event.data,
+    source: 'webhook' as const,
+  });
 
-        // Kick off PlanetScale sync workflow (with retry)
-        await ctx.env.runMutation(internal.workflows.syncToPlanetScale.kickoffOrganizationSync, {
-          workosId: event.data.id,
-          convexId: convexId,
-          webhookEvent: 'organization.created',
-          createdAt: new Date().getTime(),
-          updatedAt: new Date().getTime(),
-        });
-        break;
+  console.log(`[Webhook] Received org event: ${event.id} (${event.event}) - scheduled for processing`);
 
-      case 'organization.updated':
-        convexId = await ctx.env.runMutation(internal.organizations.internal.mutation.upsertFromWorkos, {
-          externalId: event.data.id,
-          name: event.data.name,
-          metadata: event.data.metadata,
-          domains: event.data.domains.map((domain) => {
-            return {
-              domain: domain.domain,
-              externalId: domain.id,
-              status: domain.state as 'verified' | 'pending' | 'failed',
-            };
-          }),
-        });
-
-        // Kick off PlanetScale sync workflow (with retry)
-        await ctx.env.runMutation(internal.workflows.syncToPlanetScale.kickoffOrganizationSync, {
-          workosId: event.data.id,
-          convexId: convexId,
-          webhookEvent: 'organization.updated',
-          updatedAt: new Date().getTime(),
-        });
-        break;
-
-      case 'organization.deleted': {
-        // Kick off deletion workflow (deletes from PlanetScale first, then Convex with cascade)
-        await ctx.env.runMutation(internal.workflows.syncToPlanetScale.kickoffOrganizationDeletion, {
-          workosId: event.data.id,
-        });
-        break;
-      }
-
-      case 'organization_domain.verified':
-        await ctx.env.runMutation(internal.organizationDomains.internal.mutation.updateFromWorkos, {
-          externalId: event.data.id,
-          status: 'verified',
-        });
-        break;
-
-      case 'organization_domain.verification_failed':
-        await ctx.env.runMutation(internal.organizationDomains.internal.mutation.updateFromWorkos, {
-          externalId: event.data.id,
-          status: 'failed',
-        });
-        break;
-
-      default:
-        throw new ConvexError('Unsupported WorkOS organization webhook event');
-    }
-
-    return new Response(null, { status: 200 });
-  } catch (error) {
-    console.error('Error occurred', error);
-    return new Response('Auth Webhook Error', {
-      status: 400,
-    });
-  }
+  // Return 200 immediately - processing happens async
+  return new Response(null, { status: 200 });
 }

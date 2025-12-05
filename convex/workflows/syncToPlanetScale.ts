@@ -26,9 +26,10 @@ export const syncUser = workflow.define({
     email: v.string(),
     createdAt: v.optional(v.number()),
     updatedAt: v.number(),
+    startedAt: v.number(),
   },
   handler: async (step, args): Promise<void> => {
-    const { workosId, convexId, email, createdAt, updatedAt } = args;
+    const { workosId, convexId, email, createdAt, updatedAt, startedAt } = args;
 
     // Step 1: Upsert to PlanetScale and get the generated ID
     const result = await step.runAction(
@@ -43,6 +44,13 @@ export const syncUser = workflow.define({
       { convexId, planetscaleId: result.planetscaleId },
       { name: 'set-user-planetscale-id' },
     );
+
+    // Step 3: Record actual completion time (not relying on onComplete callback)
+    await step.runMutation(
+      internal.workflows.syncToPlanetScale.recordWorkflowCompletion,
+      { entityType: 'user' as const, entityId: workosId, startedAt },
+      { name: 'record-completion' },
+    );
   },
 });
 
@@ -56,9 +64,10 @@ export const syncOrganization = workflow.define({
     convexId: v.id('organizations'),
     createdAt: v.optional(v.number()),
     updatedAt: v.number(),
+    startedAt: v.number(),
   },
   handler: async (step, args): Promise<void> => {
-    const { workosId, convexId, createdAt, updatedAt } = args;
+    const { workosId, convexId, createdAt, updatedAt, startedAt } = args;
 
     // Step 1: Upsert to PlanetScale and get the generated ID
     const result = await step.runAction(
@@ -73,6 +82,13 @@ export const syncOrganization = workflow.define({
       { convexId, planetscaleId: result.planetscaleId },
       { name: 'set-organization-planetscale-id' },
     );
+
+    // Step 3: Record actual completion time
+    await step.runMutation(
+      internal.workflows.syncToPlanetScale.recordWorkflowCompletion,
+      { entityType: 'organization' as const, entityId: workosId, startedAt },
+      { name: 'record-completion' },
+    );
   },
 });
 
@@ -83,9 +99,10 @@ export const syncOrganization = workflow.define({
 export const deleteUser = workflow.define({
   args: {
     workosId: v.string(),
+    startedAt: v.number(),
   },
   handler: async (step, args): Promise<void> => {
-    const { workosId } = args;
+    const { workosId, startedAt } = args;
 
     // Step 1: Delete from PlanetScale
     await step.runAction(
@@ -99,6 +116,13 @@ export const deleteUser = workflow.define({
       internal.users.internal.mutation.deleteFromWorkos,
       { externalId: workosId },
       { name: 'delete-user-convex' },
+    );
+
+    // Step 3: Record actual completion time
+    await step.runMutation(
+      internal.workflows.syncToPlanetScale.recordWorkflowCompletion,
+      { entityType: 'user' as const, entityId: workosId, startedAt },
+      { name: 'record-completion' },
     );
   },
 });
@@ -141,9 +165,10 @@ export const syncSubscription = workflow.define({
 export const deleteOrganization = workflow.define({
   args: {
     workosId: v.string(),
+    startedAt: v.number(),
   },
   handler: async (step, args): Promise<void> => {
-    const { workosId } = args;
+    const { workosId, startedAt } = args;
 
     // Step 1: Cancel any active Stripe subscriptions (safety net)
     // This ensures no orphaned subscriptions remain even if the deletion
@@ -167,11 +192,58 @@ export const deleteOrganization = workflow.define({
       { externalId: workosId },
       { name: 'delete-organization-convex' },
     );
+
+    // Step 4: Record actual completion time
+    await step.runMutation(
+      internal.workflows.syncToPlanetScale.recordWorkflowCompletion,
+      { entityType: 'organization' as const, entityId: workosId, startedAt },
+      { name: 'record-completion' },
+    );
   },
 });
 
 // ============================================================
-// WORKFLOW COMPLETION HANDLER
+// WORKFLOW COMPLETION TRACKING
+// ============================================================
+
+/**
+ * Records the actual completion time of a workflow.
+ * Called at the END of the workflow steps (not in onComplete callback).
+ * This gives us accurate duration measurements.
+ */
+export const recordWorkflowCompletion = internalMutation({
+  args: {
+    entityType: v.union(v.literal('user'), v.literal('organization')),
+    entityId: v.string(),
+    startedAt: v.number(),
+  },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    const completedAt = Date.now();
+    const durationMs = completedAt - args.startedAt;
+
+    // Find the most recent pending sync record for this entity
+    const syncRecord = await ctx.db
+      .query('syncStatus')
+      .withIndex('by_entity', (q) => q.eq('entityType', args.entityType).eq('entityId', args.entityId))
+      .filter((q) => q.eq(q.field('status'), 'pending'))
+      .order('desc')
+      .first();
+
+    if (syncRecord) {
+      await ctx.db.patch(syncRecord._id, {
+        completedAt,
+        durationMs,
+        status: 'success' as const,
+      });
+    }
+
+    return null;
+  },
+});
+
+// ============================================================
+// WORKFLOW COMPLETION HANDLER (for failures only)
 // ============================================================
 
 export const handleSyncComplete = internalMutation({
@@ -190,46 +262,49 @@ export const handleSyncComplete = internalMutation({
     const completedAt = Date.now();
     const durationMs = completedAt - startedAt;
 
-    // Find by workflowId to update the correct record
-    const syncRecord = await ctx.db
-      .query('syncStatus')
-      .withIndex('by_workflow', (q) => q.eq('workflowId', args.workflowId))
-      .unique();
-
     const isSuccess = args.result.kind === 'success';
     const errorMessage = 'error' in args.result ? (args.result as { error?: string }).error : undefined;
 
-    if (syncRecord) {
-      await ctx.db.patch(syncRecord._id, {
-        completedAt,
-        durationMs,
-        status: isSuccess ? ('success' as const) : ('failed' as const),
-        error: errorMessage,
-      });
-    }
+    // Only handle failures - success is already recorded by recordWorkflowCompletion
+    if (!isSuccess) {
+      // Find by workflowId to update the correct record
+      const syncRecord = await ctx.db
+        .query('syncStatus')
+        .withIndex('by_workflow', (q) => q.eq('workflowId', args.workflowId))
+        .unique();
 
-    // Add to dead letter queue if the workflow failed after all retries
-    if (!isSuccess && errorMessage) {
-      await ctx.db.insert('deadLetterQueue', {
-        workflowId: args.workflowId,
-        entityType,
-        entityId,
-        error: errorMessage,
-        context: {
-          startedAt,
+      if (syncRecord) {
+        await ctx.db.patch(syncRecord._id, {
           completedAt,
           durationMs,
-          syncRecordId: syncRecord?._id,
-        },
-        createdAt: completedAt,
-        retryable: true,
-        retryCount: 0,
-      });
+          status: 'failed' as const,
+          error: errorMessage,
+        });
+      }
 
-      console.error(
-        `[DEAD LETTER] ${entityType} ${entityId} failed after all retries: ${errorMessage}. ` +
-          `Workflow: ${args.workflowId}. Manual intervention may be required.`,
-      );
+      // Add to dead letter queue
+      if (errorMessage) {
+        await ctx.db.insert('deadLetterQueue', {
+          workflowId: args.workflowId,
+          entityType,
+          entityId,
+          error: errorMessage,
+          context: {
+            startedAt,
+            completedAt,
+            durationMs,
+            syncRecordId: syncRecord?._id,
+          },
+          createdAt: completedAt,
+          retryable: true,
+          retryCount: 0,
+        });
+
+        console.error(
+          `[DEAD LETTER] ${entityType} ${entityId} failed after all retries: ${errorMessage}. ` +
+            `Workflow: ${args.workflowId}. Manual intervention may be required.`,
+        );
+      }
     }
 
     return null;
@@ -292,6 +367,7 @@ export const kickoffUserSync = internalMutation({
         email: args.email,
         createdAt: args.createdAt,
         updatedAt: args.updatedAt,
+        startedAt, // Pass to workflow for accurate duration tracking
       },
       {
         onComplete: internal.workflows.syncToPlanetScale.handleSyncComplete,
@@ -334,6 +410,7 @@ export const kickoffOrganizationSync = internalMutation({
         convexId: args.convexId,
         createdAt: args.createdAt,
         updatedAt: args.updatedAt,
+        startedAt, // Pass to workflow for accurate duration tracking
       },
       {
         onComplete: internal.workflows.syncToPlanetScale.handleSyncComplete,
@@ -367,7 +444,10 @@ export const kickoffUserDeletion = internalMutation({
     const workflowId: WorkflowId = await workflow.start(
       ctx,
       internal.workflows.syncToPlanetScale.deleteUser,
-      { workosId: args.workosId },
+      {
+        workosId: args.workosId,
+        startedAt, // Pass to workflow for accurate duration tracking
+      },
       {
         onComplete: internal.workflows.syncToPlanetScale.handleSyncComplete,
         context: {
@@ -400,7 +480,10 @@ export const kickoffOrganizationDeletion = internalMutation({
     const workflowId: WorkflowId = await workflow.start(
       ctx,
       internal.workflows.syncToPlanetScale.deleteOrganization,
-      { workosId: args.workosId },
+      {
+        workosId: args.workosId,
+        startedAt, // Pass to workflow for accurate duration tracking
+      },
       {
         onComplete: internal.workflows.syncToPlanetScale.handleSyncComplete,
         context: {

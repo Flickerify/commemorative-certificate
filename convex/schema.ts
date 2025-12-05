@@ -170,6 +170,32 @@ export const stripeWebhookEvents = defineTable({
 });
 
 // ============================================================
+// WORKOS EVENTS API CURSOR
+// ============================================================
+
+export const workosEventsCursor = defineTable({
+  // Singleton identifier - always 'main'
+  key: v.literal('main'),
+  // The cursor (event ID) to resume from
+  cursor: v.optional(v.string()),
+  // Last successful poll timestamp
+  lastPolledAt: v.number(),
+  // Last processed event ID for idempotency
+  lastProcessedEventId: v.optional(v.string()),
+  updatedAt: v.number(),
+});
+
+// ============================================================
+// WORKOS PROCESSED EVENTS (for idempotency/deduplication)
+// ============================================================
+
+export const workosProcessedEvents = defineTable({
+  eventId: v.string(),
+  eventType: v.string(),
+  processedAt: v.number(),
+});
+
+// ============================================================
 // DEAD LETTER QUEUE FOR FAILED SYNCS
 // ============================================================
 
@@ -227,6 +253,10 @@ export default defineSchema({
     .index('by_workflow', ['workflowId'])
     .index('by_entity', ['entityType', 'entityId'])
     .index('by_status', ['retryable', 'resolvedAt']),
+  // WorkOS Events API cursor (singleton)
+  workosEventsCursor: workosEventsCursor.index('by_key', ['key']),
+  // WorkOS processed events for idempotency
+  workosProcessedEvents: workosProcessedEvents.index('by_event_id', ['eventId']),
 });
 
 export const user = users.validator;

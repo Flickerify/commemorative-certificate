@@ -7,6 +7,23 @@ import { users } from '../../../db/schema/users';
 import { organizations } from '../../../db/schema/organizations';
 import { eq } from 'drizzle-orm';
 
+/**
+ * Safely convert a timestamp value to a Date.
+ * Falls back to current date if the value is invalid.
+ */
+function safeDate(value: number | undefined | null): Date {
+  if (!value || isNaN(value)) {
+    console.warn(`[PlanetScale] Invalid timestamp value: ${value}, using current time`);
+    return new Date();
+  }
+  const date = new Date(value);
+  if (isNaN(date.getTime())) {
+    console.warn(`[PlanetScale] Invalid date from timestamp: ${value}, using current time`);
+    return new Date();
+  }
+  return date;
+}
+
 export const upsertUser = internalAction({
   args: {
     id: v.string(),
@@ -26,7 +43,7 @@ export const upsertUser = internalAction({
       // Update existing record
       await db
         .update(users)
-        .set({ updatedAt: new Date(updatedAt) })
+        .set({ updatedAt: safeDate(updatedAt) })
         .where(eq(users.workosId, id));
       return { success: true, planetscaleId: existing[0].id };
     }
@@ -37,8 +54,8 @@ export const upsertUser = internalAction({
       .values({
         workosId: id,
         convexId: convexId,
-        createdAt: createdAt ? new Date(createdAt) : new Date(),
-        updatedAt: new Date(updatedAt),
+        createdAt: safeDate(createdAt),
+        updatedAt: safeDate(updatedAt),
       })
       .returning({ id: users.id });
 
@@ -81,7 +98,7 @@ export const upsertOrganization = internalAction({
       // Update existing record
       await db
         .update(organizations)
-        .set({ updatedAt: new Date(updatedAt) })
+        .set({ updatedAt: safeDate(updatedAt) })
         .where(eq(organizations.workosId, id));
       return { success: true, planetscaleId: existing[0].id };
     }
@@ -92,8 +109,8 @@ export const upsertOrganization = internalAction({
       .values({
         workosId: id,
         convexId: convexId,
-        createdAt: createdAt ? new Date(createdAt) : new Date(),
-        updatedAt: new Date(updatedAt),
+        createdAt: safeDate(createdAt),
+        updatedAt: safeDate(updatedAt),
       })
       .returning({ id: organizations.id });
 

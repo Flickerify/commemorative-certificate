@@ -1,37 +1,28 @@
-import { ConvexError } from 'convex/values';
 import { Context } from 'hono';
 import { internal } from '../../_generated/api';
 import type { WorkosHonoEnv } from '../../types';
 
+/**
+ * Handle membership webhooks from WorkOS.
+ *
+ * IMPORTANT: Respond immediately with 200 OK, then process async.
+ * Per WorkOS docs: "respond to a webhook request with a 200 OK response
+ * as quickly as possible once received"
+ */
 export async function handleMembershipWebhooks(ctx: Context<WorkosHonoEnv>) {
   const event = ctx.var.workosEvent;
 
-  try {
-    switch (event.event) {
-      case 'organization_membership.created':
-      case 'organization_membership.updated':
-        await ctx.env.runMutation(internal.organizationMemberships.internal.mutation.upsertFromWorkos, {
-          organizationId: event.data.organizationId,
-          userId: event.data.userId,
-          role: event.data.role ? event.data.role.slug : undefined,
-          status: event.data.status,
-        });
-        break;
-      case 'organization_membership.deleted':
-        await ctx.env.runMutation(internal.organizationMemberships.internal.mutation.deleteFromWorkos, {
-          organizationId: event.data.organizationId,
-          userId: event.data.userId,
-        });
-        break;
-      default:
-        throw new ConvexError('Unsupported webhook event');
-    }
+  // Schedule async processing - await the scheduling (not the processing)
+  // The scheduler call itself is fast, the actual processing happens async
+  await ctx.env.scheduler.runAfter(0, internal.workos.events.process.processWebhookEvent, {
+    eventId: event.id,
+    eventType: event.event,
+    eventData: event.data,
+    source: 'webhook' as const,
+  });
 
-    return new Response(null, { status: 200 });
-  } catch (error) {
-    console.error('Error occured', error);
-    return new Response('Webhook Error', {
-      status: 400,
-    });
-  }
+  console.log(`[Webhook] Received membership event: ${event.id} (${event.event}) - scheduled for processing`);
+
+  // Return 200 immediately - processing happens async
+  return new Response(null, { status: 200 });
 }
