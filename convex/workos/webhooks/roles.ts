@@ -1,16 +1,15 @@
 import { Context } from 'hono';
-
 import { internal } from '../../_generated/api';
 import type { WorkosHonoEnv } from '../../types';
 
 /**
- * Handle user webhooks from WorkOS.
+ * Handle membership webhooks from WorkOS.
  *
  * IMPORTANT: Respond immediately with 200 OK, then process async.
  * Per WorkOS docs: "respond to a webhook request with a 200 OK response
  * as quickly as possible once received"
  */
-export async function handleUserWebhooks(ctx: Context<WorkosHonoEnv>) {
+export async function handleRolesWebhooks(ctx: Context<WorkosHonoEnv>) {
   const event = ctx.var.workosEvent;
 
   // Schedule async processing - await the scheduling (not the processing)
@@ -21,7 +20,7 @@ export async function handleUserWebhooks(ctx: Context<WorkosHonoEnv>) {
     source: 'webhook' as const,
   });
 
-  console.log(`[Webhook] Received user event: ${event.id} (${event.event}) - scheduled for processing`);
+  console.log(`[Webhook] Received roles event: ${event.id} (${event.event}) - scheduled for processing`);
 
   // Return 200 immediately - processing happens async
   return new Response(null, { status: 200 });

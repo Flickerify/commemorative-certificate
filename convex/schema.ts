@@ -150,7 +150,9 @@ export const organizationDomains = defineTable({
 export const organizationMemberships = defineTable({
   organizationId: v.string(),
   userId: v.string(),
-  role: v.optional(v.string()),
+  role: v.optional(v.string()), // Legacy field - WorkOS role object as string
+  roleSlug: v.optional(v.string()), // Role slug from WorkOS (e.g., 'owner', 'admin', 'member')
+  permissions: v.optional(v.array(v.string())), // Denormalized permissions array for fast lookups
   status: organizationMembershipStatusValidator,
   updatedAt: v.number(),
 });
@@ -389,6 +391,48 @@ export const enterpriseInquiries = defineTable({
 });
 
 // ============================================================
+// RBAC - ROLES & PERMISSIONS (Synced from WorkOS)
+// ============================================================
+
+/**
+ * Source of the role definition.
+ * - 'environment': Default roles defined at the WorkOS environment level
+ * - 'organization': Custom roles defined at the organization level
+ */
+export const roleSourceValidator = v.union(v.literal('environment'), v.literal('organization'));
+export type RoleSource = Infer<typeof roleSourceValidator>;
+
+/**
+ * Roles table - caches WorkOS role definitions locally.
+ * Roles are logical groupings of permissions.
+ */
+export const roles = defineTable({
+  slug: v.string(), // Unique identifier (e.g., 'owner', 'admin', 'member')
+  name: v.optional(v.string()), // Display name
+  description: v.optional(v.string()), // Optional description
+  permissions: v.array(v.string()), // Array of permission slugs
+  isDefault: v.boolean(), // Whether this is the default role for new members
+  source: roleSourceValidator, // Where the role was defined
+  organizationId: v.optional(v.id('organizations')), // For organization-scoped roles
+  createdAt: v.number(),
+  updatedAt: v.number(),
+});
+
+/**
+ * Permissions table - caches WorkOS permission definitions locally.
+ * Permissions are granular access controls (e.g., 'schemas:read').
+ */
+export const permissions = defineTable({
+  slug: v.string(), // Unique identifier (e.g., 'schemas:read', 'billing:update')
+  name: v.string(), // Display name
+  description: v.optional(v.string()), // Optional description
+  resource: v.string(), // Resource category (e.g., 'schemas', 'billing')
+  action: v.string(), // Action type (e.g., 'read', 'create', 'update', 'delete', '*')
+  createdAt: v.number(),
+  updatedAt: v.number(),
+});
+
+// ============================================================
 // DEAD LETTER QUEUE FOR FAILED SYNCS
 // ============================================================
 
@@ -471,6 +515,13 @@ export default defineSchema({
     .index('by_email', ['email'])
     .index('by_organization', ['organizationId'])
     .index('by_created_at', ['createdAt']),
+  // RBAC - Roles and permissions (synced from WorkOS)
+  roles: roles
+    .index('by_slug', ['slug'])
+    .index('by_organization', ['organizationId'])
+    .index('by_source', ['source'])
+    .index('by_default', ['isDefault']),
+  permissions: permissions.index('by_slug', ['slug']).index('by_resource', ['resource']),
 });
 
 export const user = users.validator;
@@ -506,3 +557,10 @@ export type OrganizationAuditSetting = Infer<typeof organizationAuditSetting>;
 // Enterprise inquiry types
 export const enterpriseInquiry = enterpriseInquiries.validator;
 export type EnterpriseInquiry = Infer<typeof enterpriseInquiry>;
+
+// RBAC types
+export const role = roles.validator;
+export type Role = Infer<typeof role>;
+
+export const permission = permissions.validator;
+export type PermissionDoc = Infer<typeof permission>;

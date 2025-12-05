@@ -1,0 +1,164 @@
+'use client';
+
+import { createContext, useContext, useMemo, type ReactNode } from 'react';
+import { useQuery } from 'convex/react';
+import { useAuth } from '@workos-inc/authkit-nextjs/components';
+import { api } from '@/convex/_generated/api';
+
+/** The super admin permission that grants full access to everything */
+const SUPER_ADMIN_PERMISSION = 'organization:administration:manage';
+
+/**
+ * Permission context value type.
+ */
+interface PermissionContextValue {
+  /** Array of permission strings the user has for the current organization */
+  permissions: string[];
+  /** User's role slug in the current organization */
+  roleSlug: string | undefined;
+  /** Whether permissions are still loading */
+  isLoading: boolean;
+  /** Check if user has a specific permission */
+  hasPermission: (permission: string) => boolean;
+  /** Check if user has any of the specified permissions */
+  hasAnyPermission: (permissions: string[]) => boolean;
+  /** Check if user has all of the specified permissions */
+  hasAllPermissions: (permissions: string[]) => boolean;
+  /** Whether user is organization admin (has organization:administration:manage permission) */
+  isOrgAdmin: boolean;
+}
+
+const PermissionContext = createContext<PermissionContextValue | null>(null);
+
+/**
+ * Check if a user has a specific permission.
+ *
+ * Permission resolution (format: {domain}:{resource}:{action}):
+ * 1. Super admin bypass: 'organization:administration:manage' grants all permissions
+ * 2. Exact match: e.g., 'content:schemas:read-only'
+ * 3. Manage wildcard: e.g., 'content:schemas:manage' grants all 'content:schemas:*' actions
+ */
+function checkPermission(userPermissions: string[], required: string): boolean {
+  // 1. Check for super admin (full access bypass)
+  if (userPermissions.includes(SUPER_ADMIN_PERMISSION)) return true;
+
+  // 2. Check exact match
+  if (userPermissions.includes(required)) return true;
+
+  // 3. Check 'manage' wildcard (e.g., 'content:schemas:manage' grants 'content:schemas:read-only')
+  const parts = required.split(':');
+  if (parts.length === 3) {
+    const [domain, resource] = parts;
+    if (userPermissions.includes(`${domain}:${resource}:manage`)) return true;
+  }
+
+  return false;
+}
+
+interface PermissionProviderProps {
+  readonly children: ReactNode;
+}
+
+/**
+ * Provider component that fetches and provides permission context.
+ * Uses the current organization from WorkOS auth context.
+ */
+export function PermissionProvider({ children }: PermissionProviderProps) {
+  const { organizationId } = useAuth();
+
+  // Fetch permissions for current organization
+  const permissionsResult = useQuery(
+    api.rbac.query.getMyPermissions,
+    organizationId ? { organizationId } : 'skip',
+  );
+
+  const value = useMemo<PermissionContextValue>(() => {
+    const permissions = permissionsResult?.permissions ?? [];
+    const roleSlug = permissionsResult?.roleSlug;
+    const isLoading = permissionsResult === undefined;
+
+    return {
+      permissions,
+      roleSlug,
+      isLoading,
+      hasPermission: (permission: string) => checkPermission(permissions, permission),
+      hasAnyPermission: (perms: string[]) => perms.some((p) => checkPermission(permissions, p)),
+      hasAllPermissions: (perms: string[]) => perms.every((p) => checkPermission(permissions, p)),
+      isOrgAdmin: permissions.includes(SUPER_ADMIN_PERMISSION),
+    };
+  }, [permissionsResult]);
+
+  return <PermissionContext.Provider value={value}>{children}</PermissionContext.Provider>;
+}
+
+/**
+ * Hook to access the permission context.
+ * Must be used within a PermissionProvider.
+ */
+export function usePermissions(): PermissionContextValue {
+  const context = useContext(PermissionContext);
+
+  if (!context) {
+    throw new Error('usePermissions must be used within a PermissionProvider');
+  }
+
+  return context;
+}
+
+/**
+ * Hook to check if user has a specific permission.
+ * Convenience wrapper around usePermissions().hasPermission().
+ *
+ * @param permission - The permission to check
+ * @returns true if user has the permission, false otherwise
+ */
+export function usePermission(permission: string): boolean {
+  const { hasPermission, isLoading } = usePermissions();
+
+  // Return false while loading to prevent flashing
+  if (isLoading) return false;
+
+  return hasPermission(permission);
+}
+
+/**
+ * Hook to check if user has any of the specified permissions.
+ *
+ * @param permissions - Array of permissions to check
+ * @returns true if user has at least one of the permissions
+ */
+export function useAnyPermission(permissions: string[]): boolean {
+  const { hasAnyPermission, isLoading } = usePermissions();
+
+  if (isLoading) return false;
+
+  return hasAnyPermission(permissions);
+}
+
+/**
+ * Hook to check if user has all of the specified permissions.
+ *
+ * @param permissions - Array of permissions to check
+ * @returns true if user has all of the permissions
+ */
+export function useAllPermissions(permissions: string[]): boolean {
+  const { hasAllPermissions, isLoading } = usePermissions();
+
+  if (isLoading) return false;
+
+  return hasAllPermissions(permissions);
+}
+
+/**
+ * Hook to check if user is organization admin.
+ *
+ * @returns true if user has organization:administration:manage permission
+ */
+export function useIsOrgAdmin(): boolean {
+  const { isOrgAdmin, isLoading } = usePermissions();
+
+  if (isLoading) return false;
+
+  return isOrgAdmin;
+}
+

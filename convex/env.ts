@@ -8,6 +8,7 @@ const envSchema = z.object({
   WORKOS_WEBHOOK_USERS_SECRET: z.string(),
   WORKOS_WEBHOOK_ORGANIZATIONS_SECRET: z.string(),
   WORKOS_WEBHOOK_MEMBERSHIPS_SECRET: z.string(),
+  WORKOS_WEBHOOK_ROLES_SECRET: z.string(),
   WORKOS_ACTION_SECRET: z.string(),
   // Stripe (optional in development)
   STRIPE_SECRET_KEY: z.string().optional(),

@@ -5,6 +5,26 @@ import { internalAction } from '../../_generated/server';
 import { internal } from '../../_generated/api';
 import type { Id } from '../../_generated/dataModel';
 import type { Metadata } from '../../schema';
+import type { ActionCtx } from '../../_generated/server';
+import {
+  UserCreatedEvent,
+  UserUpdatedEvent,
+  UserDeletedEvent,
+  OrganizationCreatedEvent,
+  OrganizationUpdatedEvent,
+  OrganizationDeletedEvent,
+  OrganizationMembershipCreated,
+  OrganizationMembershipUpdated,
+  OrganizationMembershipDeleted,
+  OrganizationDomainVerifiedEvent,
+  OrganizationDomainVerificationFailedEvent,
+  OrganizationDomainCreatedEvent,
+  OrganizationDomainUpdatedEvent,
+  OrganizationDomainDeletedEvent,
+  RoleCreatedEvent,
+  RoleUpdatedEvent,
+  RoleDeletedEvent,
+} from '@workos-inc/node';
 
 // Cast WorkOS metadata to Convex Metadata type
 function toMetadata(workosMetadata: Record<string, string> | undefined): Metadata | undefined {
@@ -26,8 +46,7 @@ function getField<T>(data: any, camelCase: string, snakeCase: string, defaultVal
 export const processWebhookEvent = internalAction({
   args: {
     eventId: v.string(),
-    eventType: v.string(),
-    eventData: v.any(),
+    event: v.any(),
     source: v.union(v.literal('webhook'), v.literal('events_api')),
   },
   returns: v.object({
@@ -35,7 +54,9 @@ export const processWebhookEvent = internalAction({
     skipped: v.boolean(),
     error: v.optional(v.string()),
   }),
-  handler: async (ctx, { eventId, eventType, eventData, source }) => {
+  handler: async (ctx, { eventId, event, source }) => {
+    const { event: eventType } = event;
+
     // Check if event was already processed (idempotency)
     const alreadyProcessed = await ctx.runQuery(internal.workos.events.query.isEventProcessed, {
       eventId,
@@ -48,12 +69,12 @@ export const processWebhookEvent = internalAction({
 
     try {
       // Process based on event type
-      await processEvent(ctx, eventType, eventData);
+      await processEvent(ctx, event);
 
       // Mark event as processed
       await ctx.runMutation(internal.workos.events.mutation.markEventProcessed, {
         eventId,
-        eventType,
+        eventType: event.event,
       });
 
       console.log(`[${source}] Successfully processed event: ${eventId} (${eventType})`);
@@ -69,8 +90,28 @@ export const processWebhookEvent = internalAction({
 /**
  * Process event based on type.
  */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-async function processEvent(ctx: any, eventType: string, data: any) {
+async function processEvent(
+  ctx: ActionCtx,
+  event:
+    | UserCreatedEvent
+    | UserUpdatedEvent
+    | UserDeletedEvent
+    | OrganizationCreatedEvent
+    | OrganizationUpdatedEvent
+    | OrganizationDeletedEvent
+    | OrganizationMembershipCreated
+    | OrganizationMembershipUpdated
+    | OrganizationMembershipDeleted
+    | OrganizationDomainVerifiedEvent
+    | OrganizationDomainVerificationFailedEvent
+    | OrganizationDomainCreatedEvent
+    | OrganizationDomainUpdatedEvent
+    | OrganizationDomainDeletedEvent
+    | RoleCreatedEvent
+    | RoleUpdatedEvent
+    | RoleDeletedEvent,
+) {
+  const { event: eventType, data } = event;
   switch (eventType) {
     // ============================================================
     // USER EVENTS
@@ -195,10 +236,15 @@ async function processEvent(ctx: any, eventType: string, data: any) {
     // ============================================================
     case 'organization_membership.created':
     case 'organization_membership.updated': {
+      // Extract role slug from WorkOS role object
+      // WorkOS sends role as: { slug: 'member', ... } or similar
+      const roleSlug = data.role?.slug ?? undefined;
+
       await ctx.runMutation(internal.organizationMemberships.internal.mutation.upsertFromWorkos, {
         organizationId: getField(data, 'organizationId', 'organization_id', ''),
         userId: getField(data, 'userId', 'user_id', ''),
-        role: data.role?.slug,
+        role: roleSlug, // Legacy field for backward compatibility
+        roleSlug, // New field for RBAC
         status: data.status,
       });
       break;
@@ -229,6 +275,30 @@ async function processEvent(ctx: any, eventType: string, data: any) {
         status: 'failed' as const,
       });
       break;
+    }
+    // ============================================================
+    // ROLES EVENTS
+    // ============================================================
+    case 'role.created': {
+      await ctx.runMutation(internal.rbac.internal.mutation.syncRoleFromWorkos, {
+        slug: data.slug,
+        permissions: data.permissions,
+        source: 'environment' as const,
+      });
+      break;
+    }
+    case 'role.updated': {
+      await ctx.runMutation(internal.rbac.internal.mutation.syncRoleFromWorkos, {
+        slug: data.slug,
+        permissions: data.permissions,
+        source: 'environment' as const,
+      });
+      break;
+    }
+    case 'role.deleted': {
+      await ctx.runMutation(internal.rbac.internal.mutation.removeRoleFromCache, {
+        slug: data.slug,
+      });
     }
 
     default: {

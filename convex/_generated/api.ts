@@ -37,6 +37,10 @@ import type * as organizations_internal_mutation from "../organizations/internal
 import type * as organizations_internal_query from "../organizations/internal/query.js";
 import type * as organizations_query from "../organizations/query.js";
 import type * as planetscale_internal_action from "../planetscale/internal/action.js";
+import type * as rbac_internal_mutation from "../rbac/internal/mutation.js";
+import type * as rbac_internal_query from "../rbac/internal/query.js";
+import type * as rbac_query from "../rbac/query.js";
+import type * as rbac_utils from "../rbac/utils.js";
 import type * as stripe_internal_action from "../stripe/internal/action.js";
 import type * as stripe_webhooks_middleware from "../stripe/webhooks/middleware.js";
 import type * as stripe_webhooks_subscriptions from "../stripe/webhooks/subscriptions.js";
@@ -61,6 +65,7 @@ import type * as workos_internal_action from "../workos/internal/action.js";
 import type * as workos_webhooks_memberships from "../workos/webhooks/memberships.js";
 import type * as workos_webhooks_middleware from "../workos/webhooks/middleware.js";
 import type * as workos_webhooks_organizations from "../workos/webhooks/organizations.js";
+import type * as workos_webhooks_roles from "../workos/webhooks/roles.js";
 import type * as workos_webhooks_users from "../workos/webhooks/users.js";
 
 import type {
@@ -100,6 +105,10 @@ const fullApi: ApiFromModules<{
   "organizations/internal/query": typeof organizations_internal_query;
   "organizations/query": typeof organizations_query;
   "planetscale/internal/action": typeof planetscale_internal_action;
+  "rbac/internal/mutation": typeof rbac_internal_mutation;
+  "rbac/internal/query": typeof rbac_internal_query;
+  "rbac/query": typeof rbac_query;
+  "rbac/utils": typeof rbac_utils;
   "stripe/internal/action": typeof stripe_internal_action;
   "stripe/webhooks/middleware": typeof stripe_webhooks_middleware;
   "stripe/webhooks/subscriptions": typeof stripe_webhooks_subscriptions;
@@ -124,6 +133,7 @@ const fullApi: ApiFromModules<{
   "workos/webhooks/memberships": typeof workos_webhooks_memberships;
   "workos/webhooks/middleware": typeof workos_webhooks_middleware;
   "workos/webhooks/organizations": typeof workos_webhooks_organizations;
+  "workos/webhooks/roles": typeof workos_webhooks_roles;
   "workos/webhooks/users": typeof workos_webhooks_users;
 }> = anyApi as any;
 

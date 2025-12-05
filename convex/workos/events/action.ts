@@ -70,8 +70,7 @@ export const pollEvents = internalAction({
         try {
           const result = await ctx.runAction(internal.workos.events.process.processWebhookEvent, {
             eventId: event.id,
-            eventType: event.event,
-            eventData: event.data,
+            event: event,
             source: 'events_api' as const,
           });
 

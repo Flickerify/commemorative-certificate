@@ -6,6 +6,7 @@ import { env } from '../env';
 import { handleUserWebhooks } from '../workos/webhooks/users';
 import { handleOrganizationWebhooks } from '../workos/webhooks/organizations';
 import { handleMembershipWebhooks } from '../workos/webhooks/memberships';
+import { handleRolesWebhooks } from '../workos/webhooks/roles';
 
 const workosWebhooksController: HonoWithConvex<ActionCtx> = new Hono();
 
@@ -22,5 +23,7 @@ workosWebhooksController.post(
   workosWebhookMiddleware(env.WORKOS_WEBHOOK_MEMBERSHIPS_SECRET),
   handleMembershipWebhooks,
 );
+
+workosWebhooksController.post('/roles', workosWebhookMiddleware(env.WORKOS_WEBHOOK_ROLES_SECRET), handleRolesWebhooks);
 
 export { workosWebhooksController };

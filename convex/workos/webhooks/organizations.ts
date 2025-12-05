@@ -18,8 +18,7 @@ export async function handleOrganizationWebhooks(ctx: Context<WorkosHonoEnv>) {
   // The scheduler call itself is fast, the actual processing happens async
   await ctx.env.scheduler.runAfter(0, internal.workos.events.process.processWebhookEvent, {
     eventId: event.id,
-    eventType: event.event,
-    eventData: event.data,
+    event: event,
     source: 'webhook' as const,
   });
 
