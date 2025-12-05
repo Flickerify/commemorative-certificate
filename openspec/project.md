@@ -11,6 +11,8 @@ The platform provides:
 - **Multi-state verdicts**: compatible (2), partial (1), incompatible (0)
 - **Public-facing pages** with subdomain routing (`company.flickerify.com`)
 - **Multi-tenancy** via WorkOS organizations with usage limits per tier
+- **Enterprise audit logs** with configurable retention policies
+- **30-day money-back guarantee** with scheduled plan changes
 
 ## Tech Stack
 
@@ -26,23 +28,25 @@ The platform provides:
 - **Recharts** – Charting library
 - **TanStack Table** – Data tables
 - **TanStack Form** – Form management with Zod adapter
-- **dnd-kit** – Drag and drop (`@dnd-kit/core`, `@dnd-kit/sortable`)
+- **dnd-kit** – Drag and drop (`@dnd-kit/core`, `@dnd-kit/sortable`, `@dnd-kit/modifiers`)
 
 ### Backend (Dual Database Architecture)
 
-- **PlanetScale PostgreSQL** – System of record for all business data and computation
+- **PlanetScale PostgreSQL** – System of record for identity sync and future business data
   - Serverless driver: `@neondatabase/serverless`
   - Type-safe queries: Drizzle ORM (`drizzle-orm`, `drizzle-kit`)
-- **Convex** – Visualization cache for frontend (real-time reactive queries)
+- **Convex** – Primary backend for identity, billing, audit logs, and real-time features
   - Managed deployment at `convex.cloud`
-  - Version: `convex@1.29.3`
-- **Next.js API Routes** – Business logic layer (CRUD, imports, evaluation)
+  - Version: `convex@1.30.0`
+- **Next.js API Routes** – Business logic layer (organization limits)
 - **Hono** – HTTP routing for Convex webhook endpoints (via `convex-helpers`)
 
 ### Auth & Billing
 
 - **WorkOS AuthKit** – Authentication, SSO, and organization management
+- **WorkOS Events API** – Safeguard polling for missed webhooks (60-second intervals)
 - **Stripe** – Subscription billing with webhooks for payment lifecycle
+- **Resend** – Transactional email service (`@convex-dev/resend`)
 
 ### Tooling
 
@@ -51,6 +55,8 @@ The platform provides:
 - **ESLint + Prettier** – Code quality and formatting
 - **OpenSpec** – Spec-driven development and change management
 - **t3-oss/env-nextjs** – Type-safe environment variables with Zod
+- **tldts** – Domain parsing for multi-tenant routing
+- **slugify** – Slug generation for URL-safe identifiers
 
 ## Project Conventions
 
@@ -69,39 +75,44 @@ The platform provides:
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│                      WRITE PATH                              │
+│                      IDENTITY FLOW                           │
+│                                                              │
+│  WorkOS Webhooks → Convex (Primary) → Sync to PlanetScale   │
+│       +                                                      │
+│  WorkOS Events API (Polling Safeguard - 60s intervals)      │
+└─────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────┐
+│                      BILLING FLOW                            │
+│                                                              │
+│  Stripe Webhooks → Convex (Primary) → Sync to PlanetScale   │
+└─────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────┐
+│                   FUTURE: BUSINESS DATA                      │
 │                                                              │
 │  Admin UI → Next.js API Routes → PlanetScale (Drizzle)      │
 │                                        │                     │
 │                                        ▼                     │
 │                              (Sync to Convex for display)    │
 └─────────────────────────────────────────────────────────────┘
-
-┌─────────────────────────────────────────────────────────────┐
-│                      READ PATH                               │
-│                                                              │
-│  Public Page → Convex Queries → Cached display data          │
-│       │                                                      │
-│       └─→ (Cache miss) → API Route → PlanetScale → Convex    │
-└─────────────────────────────────────────────────────────────┘
 ```
 
 **What goes where**:
 
-| Data                  | PlanetScale   | Convex              |
-| --------------------- | ------------- | ------------------- |
-| Source definitions    | ✅ Primary    | Display metadata    |
-| Source datasets       | ✅ Primary    | Stats for UI        |
-| Source rows           | ✅ Primary    | ❌ Not stored       |
-| Target definitions    | ✅ Primary    | Display metadata    |
-| Target rows           | ✅ Primary    | ❌ Not stored       |
-| Feature rules         | ✅ Primary    | ❌ Not stored       |
-| Policies              | ✅ Primary    | ❌ Not stored       |
-| Overrides             | ✅ Primary    | ❌ Not stored       |
-| Dropdown options      | ✅ Primary    | ✅ Cached shards    |
-| Compatibility results | ✅ Primary    | ✅ Cached pages     |
-| Organizations         | Existing sync | ✅ Primary (WorkOS) |
-| Users                 | Existing sync | ✅ Primary (WorkOS) |
+| Data                 | PlanetScale   | Convex                  |
+| -------------------- | ------------- | ----------------------- |
+| Users                | ✅ Synced     | ✅ Primary (WorkOS)     |
+| Organizations        | ✅ Synced     | ✅ Primary (WorkOS)     |
+| Memberships          | ❌ Not stored | ✅ Primary (WorkOS)     |
+| Subscriptions        | ✅ Synced     | ✅ Primary (Stripe)     |
+| Audit logs           | ❌ Not stored | ✅ Primary (Enterprise) |
+| Enterprise inquiries | ❌ Not stored | ✅ Primary              |
+| Source definitions   | 🔮 Future     | 🔮 Future               |
+| Source datasets      | 🔮 Future     | 🔮 Future               |
+| Target definitions   | 🔮 Future     | 🔮 Future               |
+| Feature rules        | 🔮 Future     | 🔮 Future               |
+| Public pages         | 🔮 Future     | 🔮 Future               |
 
 #### Directory Structure
 
@@ -109,7 +120,9 @@ The platform provides:
 app/                    # Next.js App Router
 ├── (app)/             # Authenticated routes (sidebar layout + onboarding guard)
 │   ├── layout.tsx     # Uses OnboardingGuard, UserProvider, Dashboard
+│   ├── page.tsx       # Dashboard home page
 │   ├── account/       # User account settings
+│   │   ├── page.tsx   # Account overview
 │   │   ├── profile/   # Profile settings
 │   │   ├── preferences/ # User preferences
 │   │   └── notifications/ # Notification settings
@@ -117,10 +130,11 @@ app/                    # Next.js App Router
 │   │   ├── organization/ # Organization details
 │   │   ├── team/      # Team member management
 │   │   ├── roles/     # Role management
-│   │   ├── billing/   # Billing settings
+│   │   ├── billing/   # Billing settings & plan management
+│   │   │   └── request/new/ # Enterprise inquiry form
 │   │   ├── apikeys/   # API key management
 │   │   ├── security/  # Security settings
-│   │   └── audit/     # Audit logs
+│   │   └── audit/     # Audit logs (enterprise only)
 │   ├── catalog/       # Data catalog (sources & targets)
 │   │   ├── sources/   # Source data management
 │   │   ├── targets/   # Target data management
@@ -139,74 +153,113 @@ app/                    # Next.js App Router
 │   ├── layout.tsx     # Gradient background, no sidebar
 │   └── onboarding/    # Onboarding wizard
 ├── [domain]/          # Multi-tenant public pages (subdomain routing)
-│   └── [...slug]/     # Dynamic public page routes
+│   └── [pageSlug]/    # Dynamic public page routes
 ├── api/               # Next.js API Routes (business logic)
-│   ├── sources/       # Source management APIs
-│   ├── targets/       # Target management APIs
-│   ├── rules/         # Rule management APIs
-│   ├── pages/         # Public page APIs
-│   └── sync/          # Convex cache sync triggers
+│   └── organization/  # Organization APIs
+│       └── limits/    # Usage limits API
 ├── admin/             # Admin-only routes
-│   └── sync/          # Sync status monitoring
+│   ├── sync/          # Sync status monitoring
+│   └── enterprise/    # Enterprise inquiry management
 ├── callback/          # Auth callback handlers
 ├── sign-in/           # Auth routes (route handlers)
 └── sign-up/
 
-convex/                # Convex backend (visualization cache + identity sync)
+convex/                # Convex backend (primary for identity, billing, audit)
 ├── controllers/       # HTTP endpoint controllers (Hono)
 │   ├── stripeWebhooksController.ts  # Stripe webhook handler
-│   └── workosWebhooksController.ts  # WorkOS webhook handler
+│   ├── workosWebhooksController.ts  # WorkOS webhook handler
+│   ├── workosActionsController.ts   # WorkOS action endpoints
+│   └── resendWebhooksController.ts  # Resend email webhook handler
 ├── functions.ts       # Custom query/mutation/action builders
 ├── schema.ts          # Database schema with validators
-├── http.ts            # HTTP router configuration
+├── http.ts            # HTTP router configuration (Hono)
+├── crons.ts           # Scheduled jobs (Events API polling, cleanup)
+├── env.ts             # Environment variable validation (Zod)
 ├── types/             # TypeScript type definitions
+│   ├── hono.d.ts      # Hono type definitions
+│   └── index.ts       # Common type exports
 ├── workflows/         # Multi-step sync workflows (Convex Workflows)
 │   └── syncToPlanetScale.ts
-├── pages/             # Public page visualization cache
-│   ├── query.ts       # getBySlug, getOptions, getResult
-│   └── internal/      # Cache sync mutations
-├── workos/            # WorkOS webhook handlers
+├── workos/            # WorkOS integration
+│   ├── actions/       # WorkOS SDK actions
+│   ├── events/        # Events API polling & processing
+│   │   ├── action.ts  # Poll events action
+│   │   ├── mutation.ts # Event cursor management
+│   │   ├── process.ts # Event processing logic
+│   │   └── query.ts   # Event queries
 │   ├── internal/      # Internal actions (verifyWebhook, updateUserMetadata)
-│   └── webhooks/      # Webhook handlers by entity (users, organizations, memberships)
-├── stripe/            # Stripe webhook handlers
+│   └── webhooks/      # Webhook handlers by entity
+├── stripe/            # Stripe integration
 │   ├── internal/      # Internal actions for Stripe operations
 │   └── webhooks/      # Subscription webhook handlers
 ├── billing/           # Billing queries and actions
 │   ├── action.ts      # Checkout, portal, subscription actions
 │   ├── query.ts       # Subscription queries
-│   └── stripe.ts      # Stripe client and helpers
-├── planetscale/       # Planetscale PostgreSQL sync actions
-│   └── internal/      # Internal sync operations
-└── [domain]/          # Domain-specific modules (users, organizations, etc.)
-    ├── internal/      # Internal functions (mutations, queries, actions)
-    ├── action.ts      # Public actions
-    └── query.ts       # Public queries
+│   ├── stripe.ts      # Stripe client and helpers
+│   └── internal/      # Internal billing mutations
+├── audit/             # Audit logging (enterprise only)
+│   ├── query.ts       # Audit log queries
+│   ├── utils.ts       # Audit helper functions
+│   └── internal/      # Internal audit mutations
+├── enterpriseInquiry/ # Enterprise sales inquiries
+│   ├── action.ts      # Submit inquiry action
+│   ├── email.ts       # Email templates
+│   ├── mutation.ts    # Public mutation
+│   ├── query.ts       # Query inquiries
+│   └── internal/      # Internal mutations
+├── users/             # User management
+│   ├── action.ts      # User actions
+│   ├── query.ts       # User queries
+│   ├── utils.ts       # User helper functions
+│   ├── admin/         # Admin-only user functions
+│   └── internal/      # Internal mutations/queries
+├── organizations/     # Organization management
+│   ├── action.ts      # Organization actions
+│   ├── query.ts       # Organization queries
+│   └── internal/      # Internal mutations/queries
+├── organizationDomains/ # Domain verification
+│   └── internal/      # Internal domain operations
+├── organizationMemberships/ # Team memberships
+│   └── internal/      # Internal membership operations
+├── planetscale/       # Planetscale sync operations
+│   └── internal/      # Internal sync actions
+└── sync/              # Sync utilities
+    ├── mutation.ts    # Sync mutations
+    └── query.ts       # Sync queries
 
-db/                    # Drizzle/Planetscale PostgreSQL (system of record)
+db/                    # Drizzle/Planetscale PostgreSQL (identity sync)
 ├── schema/            # Table definitions
-│   ├── users.ts
-│   ├── organizations.ts
-│   ├── sources.ts     # source_definitions, source_datasets, source_rows
-│   ├── targets.ts     # target_definitions, target_datasets, target_rows
-│   ├── rules.ts       # feature_rules, overrides
-│   └── pages.ts       # public_pages, compat_results, option_index
+│   ├── users.ts       # User identity sync
+│   └── organizations.ts # Organization identity + subscription sync
 └── index.ts           # Database connection
 
 components/            # React components
-├── ui/                # shadcn/ui primitives
+├── ui/                # shadcn/ui primitives (60+ components)
+├── billing/           # Billing components
+│   ├── billing-portal-button.tsx
+│   ├── checkout-button.tsx
+│   ├── pricing-table.tsx
+│   └── subscription-card.tsx
 ├── dashboard/         # Dashboard layout components
 │   ├── dashboard.tsx  # Main dashboard with space switcher
+│   ├── dashboard-context.tsx # Dashboard state context
 │   ├── icon-sidebar.tsx
 │   ├── navigation-sidebar.tsx
-│   └── right-sidebar.tsx
+│   ├── page-shell.tsx # Page wrapper component
+│   ├── right-sidebar.tsx
+│   └── dropdowns/     # Dropdown menus
+│       ├── organization-switcher.tsx
+│       └── user-account-dropdown.tsx
 ├── features/          # Feature-specific components
 │   ├── import-wizard.tsx    # CSV/JSON import wizard
 │   ├── schema-builder.tsx   # Dynamic schema editor
 │   ├── rule-builder.tsx     # JSONLogic rule builder
 │   ├── revision-history.tsx # Revision history viewer
 │   └── public-page-preview.tsx
-├── onboarding-guard.tsx  # Redirects non-onboarded users
-└── *.tsx              # Other feature components
+├── ConvexClientProvider.tsx  # Convex provider wrapper
+├── onboarding-guard.tsx      # Redirects non-onboarded users
+├── theme-provider.tsx        # Theme context provider
+└── mode-toggle.tsx           # Light/dark mode toggle
 ```
 
 #### Dashboard Spaces
@@ -237,6 +290,23 @@ Sync operations use `@convex-dev/workflow` for durability:
 - `onComplete` handler updates `syncStatus` with results
 - `syncStatus` table tracks history per entity
 - **Bidirectional ID sync**: When upserting to PlanetScale, the generated `id` is synced back to Convex as `planetscaleId` for cross-database association
+
+#### Cron Jobs
+
+Scheduled jobs defined in `convex/crons.ts`:
+
+- **WorkOS Events API polling** – Every 60 seconds, polls WorkOS Events API as a safeguard for missed webhooks
+- **WorkOS processed events cleanup** – Daily, removes events older than 30 days from idempotency table
+- **Audit log cleanup** – Daily, removes expired audit logs based on organization TTL settings
+
+#### HTTP Routing
+
+HTTP endpoints use Hono via `convex-helpers/server/hono`:
+
+- `/workos-webhooks/*` – WorkOS webhook endpoints (users, organizations, memberships, domains)
+- `/workos-actions/*` – WorkOS action endpoints (metadata updates)
+- `/stripe-webhooks/*` – Stripe webhook endpoints (subscriptions, payments)
+- `/resend-webhooks/*` – Resend email webhook endpoints
 
 ### Testing Strategy
 
@@ -325,30 +395,69 @@ Targets represent what to check against (e.g., OBD devices with features):
 ### Billing & Subscriptions
 
 - Organizations can have one of three tiers: `personal` (1 seat), `pro` (3 seats), `enterprise` (unlimited)
-- Stripe is the source of truth for billing; webhooks sync state to Convex
+- Personal tier is the free base tier (no Stripe subscription required)
+- Stripe is the source of truth for paid billing; webhooks sync state to Convex
 - Subscription statuses: `active`, `canceled`, `incomplete`, `incomplete_expired`, `past_due`, `paused`, `trialing`, `unpaid`, `none`
-- Personal tier includes 14-day free trial
+- **30-day money-back guarantee** for new subscriptions:
+  - `firstSubscriptionStart` tracks the initial subscription date (never resets)
+  - `hasDowngradedDuringGuarantee` prevents abuse of immediate refunds
+  - Stripe fees are not returned on refunds
+- **Scheduled plan changes** for downgrades:
+  - `scheduledTier`, `scheduledBillingInterval`, `scheduledPriceId` track pending changes
+  - `stripeScheduleId` links to Stripe subscription schedule
+  - Changes take effect at period end
 - `stripeWebhookEvents` table ensures idempotent webhook processing
 - Subscription info synced to Planetscale for external system access
 
+### Enterprise Inquiries
+
+- Sales contact form for enterprise leads at `/administration/billing/request/new`
+- `enterpriseInquiries` table stores inquiry details:
+  - Contact info: `firstName`, `lastName`, `email`, `phone`, `jobTitle`
+  - Company info: `companyName`, `companyWebsite`, `companySize`, `industry`
+  - Requirements: `expectedUsers`, `useCase`, `currentSolution`, `timeline`, `budget`
+  - `interestedFeatures` array for feature selection
+  - Status tracking: `pending` → `contacted` → `approved/rejected` → `converted`
+- Email notifications via Resend (`@convex-dev/resend`)
+- Admin management at `/admin/enterprise`
+
+### Audit Logs (Enterprise Only)
+
+- Comprehensive audit trail for enterprise organizations
+- Categories: `authentication`, `member`, `billing`, `settings`, `security`, `data`, `integration`
+- Each log entry includes:
+  - Actor information (user, system, or API)
+  - Action details with status (success/failure/pending)
+  - Target resource information
+  - Request context (IP address, user agent)
+  - TTL-based expiration (`expiresAt`)
+- Default retention: 365 days (configurable per organization)
+- Full-text search on description field
+- Daily cleanup cron removes expired logs
+
 ### Usage Limits by Tier
 
-| Limit                   | Personal | Pro    | Enterprise |
-| ----------------------- | -------- | ------ | ---------- |
-| Source schemas          | 2        | 10     | Unlimited  |
-| Target schemas          | 2        | 10     | Unlimited  |
-| Source rows per dataset | 1,000    | 50,000 | 100,000+   |
-| Target rows per dataset | 100      | 5,000  | 10,000+    |
-| Dimensions per schema   | 4        | 8      | 10         |
-| Rules per page          | 10       | 50     | 100        |
-| Custom subdomain        | ❌       | ✅     | ✅         |
-| Team members            | 1        | 3      | Unlimited  |
+| Limit                   | Personal | Pro    | Enterprise    |
+| ----------------------- | -------- | ------ | ------------- |
+| Team members            | 1        | 3      | Unlimited     |
+| Audit logs              | ❌       | ❌     | ✅ (365 days) |
+| Custom subdomain        | ❌       | ✅     | ✅            |
+| Dedicated support       | ❌       | ❌     | ✅            |
+| Source schemas          | 2        | 10     | Unlimited     |
+| Target schemas          | 2        | 10     | Unlimited     |
+| Source rows per dataset | 1,000    | 50,000 | 100,000+      |
+| Target rows per dataset | 100      | 5,000  | 10,000+       |
+| Dimensions per schema   | 4        | 8      | 10            |
+| Rules per page          | 10       | 50     | 100           |
+
+_Note: Source, target, and rule limits are planned features._
 
 ### Hard Deletion (GDPR)
 
 - User deletion cascades: memberships → user → Planetscale PostgreSQL
 - Org deletion cascades: domains → memberships → subscription → org → Planetscale PostgreSQL
 - Workflows handle deletion order: Planetscale first, then Convex
+- Audit log entries have TTL-based expiration (`expiresAt` field)
 
 ## Important Constraints
 
@@ -358,15 +467,24 @@ Targets represent what to check against (e.g., OBD devices with features):
 - Admin routes require `role: 'admin'` in Convex user record
 - Use `<Authenticated>` wrapper for client-side auth gating
 - Use `<OnboardingGuard>` to enforce onboarding completion
+- WorkOS Actions endpoint uses `WORKOS_ACTION_SECRET` for authentication
 
 ### Database Responsibilities
 
-- **PlanetScale** is the system of record for all business data (sources, targets, rules, results)
-- **Convex** is the visualization cache for frontend (dropdown options, cached results)
-- **WorkOS** is the source of truth for user metadata and authentication
+- **WorkOS** is the source of truth for user identity and authentication
 - **Stripe** is the source of truth for subscription billing
-- Never write directly to Convex for business data; always go through API routes → PlanetScale
-- Convex cache is disposable (can rebuild from PlanetScale)
+- **Convex** is the primary backend for:
+  - Identity storage (synced from WorkOS)
+  - Billing state (synced from Stripe)
+  - Audit logs (enterprise organizations)
+  - Enterprise inquiries
+  - Real-time reactive queries
+- **PlanetScale** is the secondary sync target for:
+  - User identity (for external system access)
+  - Organization identity with subscription info
+  - Future: business data (sources, targets, rules)
+- WorkOS webhooks + Events API polling ensure reliable event delivery
+- Event deduplication via `workosProcessedEvents` table
 
 ### Performance
 
@@ -386,11 +504,22 @@ Targets represent what to check against (e.g., OBD devices with features):
 
 ### WorkOS
 
-- **AuthKit** – Redirect-based authentication (`@workos-inc/authkit-nextjs`)
+- **AuthKit** – Redirect-based authentication (`@workos-inc/authkit-nextjs@2.12.0`)
 - **Webhooks** – `user.created`, `user.updated`, `user.deleted`, `organization.*`, `organization_membership.*`, `organization_domain.*`
-- **SDK** – `@workos-inc/node` for server-side API calls
-- **Widgets** – `@workos-inc/widgets` for UI components
+- **Events API** – Polling safeguard for missed webhooks (60-second intervals)
+- **SDK** – `@workos-inc/node@7.77.0` for server-side API calls
+- **Widgets** – `@workos-inc/widgets@1.5.1` for UI components
 - **Metadata** – All values stored as strings in WorkOS
+- **Deduplication** – `workosProcessedEvents` table ensures idempotent event handling across webhooks and Events API
+
+### Stripe
+
+- **SDK** – `stripe@20.0.0` for server-side API calls
+- **Webhooks** – Subscription lifecycle events (checkout, subscription updates, payments)
+- **Subscription Schedules** – For scheduled plan changes (downgrades at period end)
+- **Tiers** – `personal` (free), `pro` (3 seats), `enterprise` (unlimited)
+- **Money-back guarantee** – 30-day guarantee for new subscriptions
+- **Billing intervals** – Monthly and yearly options
 
 ### Stripe Webhooks
 
@@ -402,58 +531,64 @@ Targets represent what to check against (e.g., OBD devices with features):
 ### Convex
 
 - **Cloud** – Managed deployment at `convex.cloud`
-- **Version** – `convex@1.29.3`
+- **Version** – `convex@1.30.0`
 - **Dev components**:
-  - `@convex-dev/workflow@0.3.2` – Durable workflows with retry
+  - `@convex-dev/workflow@0.3.3` – Durable workflows with retry
   - `@convex-dev/workpool@0.3.0` – Background job processing
   - `@convex-dev/rate-limiter@0.3.0` – Rate limiting
   - `@convex-dev/r2@0.8.1` – R2 storage integration
   - `@convex-dev/crons@0.2.0` – Scheduled jobs
+  - `@convex-dev/resend@0.2.0` – Resend email integration
   - `convex-helpers@0.1.106` – Custom function builders and utilities
 
 ### Planetscale PostgreSQL
 
-- **Serverless driver** – `@neondatabase/serverless`
-- **Connection** – Via Drizzle ORM with PostgreSQL dialect
-- **Role**: System of record for all business data
+- **Serverless driver** – `@neondatabase/serverless@1.0.2`
+- **Connection** – Via Drizzle ORM with PostgreSQL dialect (`drizzle-orm@0.45.0`)
+- **Role**: Identity sync for users and organizations with subscription info
 
-### Stripe
+### Resend
 
-- **SDK** – `stripe` for server-side API calls
-- **Webhooks** – Subscription lifecycle events (checkout, subscription updates, payments)
-- **Tiers** – `personal` (1 seat), `pro` (3 seats), `enterprise` (unlimited)
-- **Trial** – 14-day free trial for personal tier
-- **Billing intervals** – Monthly and yearly options
+- **Integration** – `@convex-dev/resend@0.2.0` for transactional emails
+- **Use cases**:
+  - Enterprise inquiry confirmation emails
+  - Admin notification emails
+- **Webhooks** – Email delivery status tracking
 
 ### JSONLogic
 
-- **Library** – `json-logic-js` for rule evaluation
+- **Library** – `json-logic-js` for rule evaluation (future feature)
 - **Purpose** – Dynamic compatibility rules without code changes
 
 ### Environment Variables
 
-Required in `.env.local`:
+Required in `.env.local` (Next.js):
 
 ```
 # Convex
 CONVEX_DEPLOYMENT=
 NEXT_PUBLIC_CONVEX_URL=
 
-# WorkOS
-WORKOS_CLIENT_ID=
-WORKOS_API_KEY=
-WORKOS_COOKIE_PASSWORD=
-WORKOS_WEBHOOK_SECRET=
-
 # Planetscale PostgreSQL (Drizzle)
 DATABASE_URL=
+```
 
-# Stripe (in Convex environment)
+Required in Convex environment (dashboard or `convex env set`):
+
+```
+# WorkOS
+WORKOS_API_KEY=
+WORKOS_CLIENT_ID=
+WORKOS_COOKIE_PASSWORD=
+WORKOS_WEBHOOK_USERS_SECRET=           # Separate secret per webhook type
+WORKOS_WEBHOOK_ORGANIZATIONS_SECRET=
+WORKOS_WEBHOOK_MEMBERSHIPS_SECRET=
+WORKOS_ACTION_SECRET=                  # For authenticated action endpoints
+
+# Stripe (optional in development)
 STRIPE_SECRET_KEY=
 STRIPE_WEBHOOK_SECRET=
-STRIPE_PRICE_PERSONAL_MONTHLY=
-STRIPE_PRICE_PERSONAL_YEARLY=
-STRIPE_PRICE_PRO_MONTHLY=
+STRIPE_PRICE_PRO_MONTHLY=              # Personal tier is free (no price)
 STRIPE_PRICE_PRO_YEARLY=
 STRIPE_PRICE_ENTERPRISE_MONTHLY=
 STRIPE_PRICE_ENTERPRISE_YEARLY=
@@ -461,63 +596,59 @@ STRIPE_PRICE_ENTERPRISE_YEARLY=
 
 ## Database Schema
 
-### Convex Tables (Visualization Cache + Identity)
+### Convex Tables (Primary for Identity, Billing, Audit)
 
 **Identity (synced from WorkOS)**:
 
 - **users** – `email`, `externalId`, `firstName`, `lastName`, `emailVerified`, `profilePictureUrl`, `role`, `metadata`, `expoPushToken`, `planetscaleId?`, `updatedAt`
 - **organizations** – `externalId`, `name`, `metadata`, `planetscaleId?`, `updatedAt`
 - **organizationDomains** – `organizationId`, `externalId`, `domain`, `status`, `updatedAt`
-- **organizationMemberships** – `organizationId`, `userId`, `role`, `status`, `updatedAt`
+- **organizationMemberships** – `organizationId`, `userId`, `role?`, `status`, `updatedAt`
 
 **Billing (synced from Stripe)**:
 
 - **stripeCustomers** – `organizationId`, `stripeCustomerId`, `createdAt`
-- **organizationSubscriptions** – `organizationId`, `stripeCustomerId`, `stripeSubscriptionId`, `stripePriceId`, `tier`, `status`, `billingInterval`, `currentPeriodStart`, `currentPeriodEnd`, `cancelAtPeriodEnd`, `cancelAt`, `trialStart`, `trialEnd`, `seatLimit`, `paymentMethodBrand`, `paymentMethodLast4`, `pendingCheckoutSessionId`, `pendingPriceId`, `createdAt`, `updatedAt`
-- **stripeWebhookEvents** – `eventId`, `eventType`, `customerId`, `processedAt` (idempotency)
+- **organizationSubscriptions** – `organizationId`, `stripeCustomerId`, `stripeSubscriptionId?`, `stripePriceId?`, `tier`, `status`, `billingInterval?`, `currentPeriodStart?`, `currentPeriodEnd?`, `cancelAtPeriodEnd`, `cancelAt?`, `seatLimit`, `paymentMethodBrand?`, `paymentMethodLast4?`, `pendingCheckoutSessionId?`, `pendingPriceId?`, `scheduledTier?`, `scheduledBillingInterval?`, `scheduledPriceId?`, `stripeScheduleId?`, `firstSubscriptionStart?`, `hasDowngradedDuringGuarantee?`, `createdAt`, `updatedAt`
+- **stripeWebhookEvents** – `eventId`, `eventType`, `customerId?`, `processedAt` (idempotency)
+
+**WorkOS Events API**:
+
+- **workosEventsCursor** – `key` (singleton), `cursor?`, `lastPolledAt`, `lastProcessedEventId?`, `updatedAt`
+- **workosProcessedEvents** – `eventId`, `eventType`, `processedAt` (idempotency/deduplication)
 
 **Sync Status**:
 
-- **syncStatus** – `entityType`, `entityId`, `targetSystem`, `status`, `webhookEvent`, `workflowId`, `startedAt`, `completedAt`, `durationMs`, `error`
-- **deadLetterQueue** – `workflowId`, `entityType`, `entityId`, `error`, `context`, `createdAt`, `retryable`, `retryCount`, `lastRetryAt`, `resolvedAt`
+- **syncStatus** – `entityType` (`user`|`organization`), `entityId`, `targetSystem` (`planetscale`), `status`, `webhookEvent`, `workflowId`, `startedAt`, `completedAt?`, `durationMs?`, `error?`
+- **deadLetterQueue** – `workflowId`, `entityType` (`user`|`organization`|`subscription`), `entityId`, `error`, `context?`, `createdAt`, `retryable`, `retryCount`, `lastRetryAt?`, `resolvedAt?`
 
-**Visualization Cache (synced from PlanetScale)**:
+**Audit Logs (Enterprise)**:
 
-- **optionShards** – `organizationId`, `pageId`, `level`, `parentHash`, `shard`, `values`, `syncedAt`
-- **resultCache** – `organizationId`, `pageId`, `selectionHash`, `page`, `payload`, `syncedAt`
-- **pageDisplays** – `organizationId`, `slug`, `name`, `status`, `dimensions`, `messaging`, `syncedAt`
+- **auditLogs** – `organizationId`, `actorId?`, `actorExternalId?`, `actorEmail?`, `actorName?`, `actorType` (`user`|`system`|`api`), `category`, `action`, `status`, `targetType?`, `targetId?`, `targetName?`, `metadata?`, `description`, `ipAddress?`, `userAgent?`, `timestamp`, `expiresAt`
+- **organizationAuditSettings** – `organizationId`, `retentionDays`, `isRetentionUpgradable`, `createdAt`, `updatedAt`
 
-### Planetscale PostgreSQL Tables (System of Record)
+**Enterprise Inquiries**:
+
+- **enterpriseInquiries** – `firstName`, `lastName`, `email`, `phone?`, `jobTitle`, `companyName`, `companyWebsite?`, `companySize`, `industry`, `expectedUsers`, `useCase`, `currentSolution?`, `timeline`, `budget?`, `additionalRequirements?`, `interestedFeatures`, `status`, `adminNotes?`, `respondedAt?`, `respondedBy?`, `userId?`, `organizationId?`, `confirmationEmailSent`, `adminNotificationSent`, `createdAt`, `updatedAt`
+
+**Visualization Cache (future, synced from PlanetScale)**:
+
+- **optionShards** – (future) Dropdown option shards
+- **resultCache** – (future) Compatibility result cache
+- **pageDisplays** – (future) Public page display metadata
+
+### Planetscale PostgreSQL Tables (Identity Sync)
 
 **Identity Sync**:
 
-- **users** – `id`, `workosId`, `convexId`, `updatedAt`, `createdAt`
-- **organizations** – `id`, `workosId`, `convexId`, `subscriptionTier`, `subscriptionStatus`, `planTier`, `customSubdomain`, `usageLimits`, `updatedAt`, `createdAt`
+- **users** – `id` (serial), `workosId`, `convexId`, `updatedAt`, `createdAt`
+- **organizations** – `id` (serial), `workosId`, `convexId`, `subscriptionTier`, `subscriptionStatus`, `updatedAt`, `createdAt`
 
-**Source Management**:
+**Future: Business Data** (not yet implemented):
 
-- **source_definitions** – `id`, `organizationId`, `slug`, `name`, `description`, `schemaJson`, `createdAt`, `updatedAt`
-- **source_datasets** – `id`, `organizationId`, `definitionId`, `name`, `status`, `rowCount`, `revisionId`, `createdAt`, `updatedAt`
-- **source_rows** – `id`, `organizationId`, `datasetId`, `keyText`, `keyHash`, `dimsJson`, `attrsJson`, `createdAt`
-- **source_dimension_values** – `id`, `organizationId`, `datasetId`, `level`, `parentKeyHash`, `value`, `valueCount`
-- **source_imports** – `id`, `organizationId`, `datasetId`, `status`, `mappingJson`, `statsJson`, `error`, `createdAt`
-
-**Target Management**:
-
-- **target_definitions** – `id`, `organizationId`, `slug`, `name`, `description`, `schemaJson`, `createdAt`, `updatedAt`
-- **target_datasets** – `id`, `organizationId`, `definitionId`, `name`, `status`, `rowCount`, `revisionId`, `createdAt`, `updatedAt`
-- **target_rows** – `id`, `organizationId`, `datasetId`, `keyText`, `keyHash`, `attrsJson`, `createdAt`
-
-**Compatibility Engine**:
-
-- **feature_rules** – `id`, `organizationId`, `pageId`, `name`, `required`, `weight`, `category`, `logicJson`, `sortOrder`, `createdAt`
-- **overrides** – `id`, `organizationId`, `pageId`, `sourceKeyHash`, `targetKeyHash`, `value`, `note`, `createdAt`
-
-**Public Pages**:
-
-- **public_pages** – `id`, `organizationId`, `slug`, `name`, `sourceDatasetId`, `targetDatasetId`, `devicePolicyJson`, `selectionPolicyJson`, `status`, `revisionId`, `createdAt`, `updatedAt`
-- **compat_results** – `id`, `organizationId`, `pageId`, `revisionId`, `selectionHash`, `pageNum`, `payloadJson`, `createdAt`
-- **option_index** – `id`, `organizationId`, `pageId`, `level`, `parentHash`, `shard`, `valuesJson`
+- Source definitions, datasets, rows
+- Target definitions, datasets, rows
+- Feature rules, overrides
+- Public pages, compatibility results
 
 ## Supported Languages
 
