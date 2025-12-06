@@ -5,6 +5,7 @@ import { useAuth } from '@workos-inc/authkit-nextjs/components';
 import { useQuery, useAction } from 'convex/react';
 import { api } from '@/convex/_generated/api';
 import { PageShell } from '@/components/dashboard/page-shell';
+import { PermissionPageGuard, usePermission } from '@/components/rbac';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
@@ -24,15 +25,10 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { MoreVertical, UserPlus, Loader2, Mail, Shield, Trash2, UserCog } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import Image from 'next/image';
 
 const roleColors: Record<string, string> = {
   owner: 'bg-amber-100 text-amber-700 dark:bg-amber-500/20 dark:text-amber-400',
@@ -47,6 +43,19 @@ const statusColors: Record<string, string> = {
 };
 
 export default function TeamPage() {
+  // Protect page with permission guard
+  return (
+    <PermissionPageGuard
+      permission="organization:membership:read-only"
+      redirectTo="/administration/organization"
+      deniedMessage="You don't have permission to view team members."
+    >
+      <TeamPageContent />
+    </PermissionPageGuard>
+  );
+}
+
+function TeamPageContent() {
   const { organizationId } = useAuth();
   const [isInviteOpen, setIsInviteOpen] = useState(false);
   const [inviteEmail, setInviteEmail] = useState('');
@@ -54,21 +63,16 @@ export default function TeamPage() {
   const [isInviting, setIsInviting] = useState(false);
   const [inviteError, setInviteError] = useState<string | null>(null);
 
-  // Fetch members
-  const members = useQuery(
-    api.organizations.query.getMembers,
-    organizationId ? { organizationId } : 'skip'
-  );
-  
-  const isAdmin = useQuery(
-    api.organizations.query.isAdmin,
-    organizationId ? { organizationId } : 'skip'
-  );
+  // Check permissions from JWT (WorkOS is source of truth)
+  const canManageMembers = usePermission('organization:membership:manage');
+  const isOrgAdmin = usePermission('organization:administration:manage');
 
-  const isOwner = useQuery(
-    api.organizations.query.isOwner,
-    organizationId ? { organizationId } : 'skip'
-  );
+  // Fetch members
+  const members = useQuery(api.organizations.query.getMembers, organizationId ? { organizationId } : 'skip');
+
+  // Permission-based access control (from JWT)
+  const isAdmin = canManageMembers || isOrgAdmin;
+  const isOwner = isOrgAdmin; // Owners have organization:administration:manage permission
 
   // Actions
   const inviteMember = useAction(api.organizations.action.inviteMember);
@@ -146,7 +150,7 @@ export default function TeamPage() {
               <div key={member._id} className="flex items-center justify-between p-4">
                 <div className="flex items-center gap-3">
                   {member.user?.profilePictureUrl ? (
-                    <img
+                    <Image
                       src={member.user.profilePictureUrl}
                       alt={`${member.user.firstName || ''} ${member.user.lastName || ''}`}
                       className="h-10 w-10 rounded-full object-cover"
@@ -169,13 +173,11 @@ export default function TeamPage() {
                   </div>
                 </div>
                 <div className="flex items-center gap-3">
-                  <Badge className={cn('text-xs capitalize', roleColors[member.role || 'member'])}>
-                    {member.role || 'member'}
+                  <Badge className={cn('text-xs capitalize', roleColors[member.roleSlug || 'member'])}>
+                    {member.roleSlug || 'member'}
                   </Badge>
-                  <Badge className={cn('text-xs capitalize', statusColors[member.status])}>
-                    {member.status}
-                  </Badge>
-                  {isAdmin && member.role !== 'owner' && (
+                  <Badge className={cn('text-xs capitalize', statusColors[member.status])}>{member.status}</Badge>
+                  {isAdmin && member.roleSlug !== 'owner' && (
                     <DropdownMenu>
                       <DropdownMenuTrigger asChild>
                         <Button variant="ghost" size="icon" className="h-8 w-8">
@@ -232,9 +234,7 @@ export default function TeamPage() {
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Invite Team Member</DialogTitle>
-            <DialogDescription>
-              Send an invitation email to add a new member to your organization.
-            </DialogDescription>
+            <DialogDescription>Send an invitation email to add a new member to your organization.</DialogDescription>
           </DialogHeader>
           <form onSubmit={handleInvite} className="space-y-4">
             <div className="space-y-2">
@@ -262,7 +262,7 @@ export default function TeamPage() {
                 </SelectContent>
               </Select>
               <p className="text-xs text-muted-foreground">
-                {inviteRole === 'owner' 
+                {inviteRole === 'owner'
                   ? 'Owners have full control including billing and can invite other owners.'
                   : 'Admins can manage team members and organization settings.'}
               </p>

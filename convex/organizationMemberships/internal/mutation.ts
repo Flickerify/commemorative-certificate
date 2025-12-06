@@ -6,16 +6,14 @@ export const upsertFromWorkos = internalMutation({
   args: {
     organizationId: v.string(),
     userId: v.string(),
-    role: v.optional(v.string()), // Legacy: full role object as string
-    roleSlug: v.optional(v.string()), // New: role slug for RBAC
+    roleSlug: v.optional(v.string()), // Role slug for RBAC (e.g., 'owner', 'admin', 'member', 'finance')
     status: v.union(v.literal('active'), v.literal('pending'), v.literal('inactive')),
   },
   returns: v.null(),
   handler: async (ctx, args) => {
-    // Determine role slug from args or extract from role string
-    const roleSlug = args.roleSlug ?? args.role ?? undefined;
+    const { roleSlug } = args;
 
-    // Try to get permissions from the roles table first
+    // Get permissions from the roles table or fall back to defaults
     let permissions: string[] = [];
     if (roleSlug) {
       const role = await ctx.db
@@ -38,7 +36,6 @@ export const upsertFromWorkos = internalMutation({
 
     if (existing) {
       await ctx.db.patch(existing._id, {
-        role: args.role,
         roleSlug,
         permissions,
         status: args.status,
@@ -48,10 +45,10 @@ export const upsertFromWorkos = internalMutation({
       await ctx.db.insert('organizationMemberships', {
         organizationId: args.organizationId,
         userId: args.userId,
-        role: args.role,
         roleSlug,
         permissions,
         status: args.status,
+        createdAt: Date.now(),
         updatedAt: Date.now(),
       });
     }
@@ -65,6 +62,7 @@ export const deleteFromWorkos = internalMutation({
     organizationId: v.string(),
     userId: v.string(),
   },
+  returns: v.null(),
   handler: async (ctx, args) => {
     const existing = await ctx.db
       .query('organizationMemberships')
@@ -74,5 +72,7 @@ export const deleteFromWorkos = internalMutation({
     if (existing) {
       await ctx.db.delete(existing._id);
     }
+
+    return null;
   },
 });

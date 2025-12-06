@@ -83,7 +83,7 @@ export const getOnboardingContext = protectedQuery({
       v.object({
         organizationId: v.string(),
         organizationName: v.string(),
-        role: v.union(v.literal('owner'), v.literal('admin'), v.literal('member')),
+        roleSlug: v.string(), // e.g., 'owner', 'admin', 'member', 'finance'
       }),
     ),
     // Summary info
@@ -109,7 +109,7 @@ export const getOnboardingContext = protectedQuery({
     const membershipDetails: Array<{
       organizationId: string;
       organizationName: string;
-      role: 'owner' | 'admin' | 'member';
+      roleSlug: string;
     }> = [];
 
     for (const membership of memberships) {
@@ -120,14 +120,10 @@ export const getOnboardingContext = protectedQuery({
 
       if (!org) continue;
 
-      // Normalize role - WorkOS uses 'admin' for organization owners
-      const normalizedRole: 'owner' | 'admin' | 'member' =
-        membership.role === 'owner' || membership.role === 'admin' ? (membership.role as 'owner' | 'admin') : 'member';
-
       membershipDetails.push({
         organizationId: org.externalId,
         organizationName: org.name,
-        role: normalizedRole,
+        roleSlug: membership.roleSlug ?? 'member',
       });
     }
 

@@ -6,6 +6,7 @@ import { useQuery, useAction } from 'convex/react';
 import { api } from '@/convex/_generated/api';
 import { useAuth } from '@workos-inc/authkit-nextjs/components';
 import { PageShell } from '@/components/dashboard/page-shell';
+import { PermissionPageGuard } from '@/components/rbac';
 import { SubscriptionCard } from '@/components/billing/subscription-card';
 import { PricingTable } from '@/components/billing/pricing-table';
 import { BillingPortalButton } from '@/components/billing/billing-portal-button';
@@ -38,6 +39,19 @@ import type { Id } from '@/convex/_generated/dataModel';
 import { cn } from '@/lib/utils';
 
 export default function BillingPage() {
+  // Protect page with permission guard
+  return (
+    <PermissionPageGuard
+      permission="finance:billing:read-only"
+      redirectTo="/administration/organization"
+      deniedMessage="You don't have permission to view billing information."
+    >
+      <BillingPageContent />
+    </PermissionPageGuard>
+  );
+}
+
+function BillingPageContent() {
   const searchParams = useSearchParams();
   const { organizationId } = useAuth();
 

@@ -152,7 +152,7 @@ export const create = protectedAction({
     await ctx.runMutation(internal.organizationMemberships.internal.mutation.upsertFromWorkos, {
       organizationId: organization.id,
       userId: ctx.user.externalId,
-      role: 'owner',
+      roleSlug: 'owner',
       status: 'active',
     });
     console.log(`[Convex] Optimistically inserted membership for user ${ctx.user.externalId}`);

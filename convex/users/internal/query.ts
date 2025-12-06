@@ -50,7 +50,7 @@ export const membershipInfoValidator = v.object({
   organizationId: v.id('organizations'),
   externalId: v.string(),
   name: v.string(),
-  role: v.optional(v.string()),
+  roleSlug: v.optional(v.string()),
   // These memberships will be auto-deleted
   willBeAutoDeleted: v.literal(true),
 });
@@ -125,7 +125,7 @@ export const canDeleteAccountCheck = internalQuery({
 
       // Only users with 'owner' role need special handling
       // 'admin' and 'member' roles can leave freely - their membership will be auto-deleted
-      const isOwner = membership.role === 'owner';
+      const isOwner = membership.roleSlug === 'owner';
 
       if (!isOwner) {
         // User is admin or member - membership will be auto-deleted
@@ -133,7 +133,7 @@ export const canDeleteAccountCheck = internalQuery({
           organizationId: org._id,
           externalId: org.externalId,
           name: org.name,
-          role: membership.role,
+          roleSlug: membership.roleSlug,
           willBeAutoDeleted: true as const,
         });
         continue;
@@ -148,7 +148,7 @@ export const canDeleteAccountCheck = internalQuery({
       const memberCount = allOrgMemberships.length;
 
       // Check if there are OTHER OWNERS
-      const otherOwners = allOrgMemberships.filter((m) => m.userId !== userExternalId && m.role === 'owner');
+      const otherOwners = allOrgMemberships.filter((m) => m.userId !== userExternalId && m.roleSlug === 'owner');
       const hasOtherOwners = otherOwners.length > 0;
 
       // If there are other owners, this owner can safely leave
@@ -158,7 +158,7 @@ export const canDeleteAccountCheck = internalQuery({
           organizationId: org._id,
           externalId: org.externalId,
           name: org.name,
-          role: membership.role,
+          roleSlug: membership.roleSlug,
           willBeAutoDeleted: true as const,
         });
         continue;
@@ -166,7 +166,7 @@ export const canDeleteAccountCheck = internalQuery({
 
       // User is the SOLE OWNER - need to handle subscription and org
       // Check if there are admins who could be promoted to owner
-      const otherAdmins = allOrgMemberships.filter((m) => m.userId !== userExternalId && m.role === 'admin');
+      const otherAdmins = allOrgMemberships.filter((m) => m.userId !== userExternalId && m.roleSlug === 'admin');
       const hasOtherAdmins = otherAdmins.length > 0;
 
       const activeSubscription = await ctx.db

@@ -8,6 +8,7 @@ import { api } from '@/convex/_generated/api';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
+import { usePermissions } from '@/components/rbac';
 import {
   Database,
   Target,
@@ -197,13 +198,23 @@ export function NavigationSidebar({ activeSpace, isMobileOpen, onMobileClose, is
   const pathname = usePathname();
   const router = useRouter();
   const { organizationId } = useAuth();
+  const { hasPermission, isLoading: permissionsLoading } = usePermissions();
 
   // Fetch current organization (includes subscriptionTier from source of truth)
   const organization = useQuery(api.organizations.query.getCurrent, organizationId ? { organizationId } : 'skip');
 
-  // Check subscription tiers
+  // Check subscription tiers (for upgrade prompts)
   const isPersonalWorkspace = organization?.subscriptionTier === 'personal';
   const isEnterprise = organization?.subscriptionTier === 'enterprise';
+
+  // Check RBAC permissions for navigation items
+  const canViewTeam = hasPermission('organization:membership:read-only');
+  const canManageTeam = hasPermission('organization:membership:manage');
+  const canViewBilling = hasPermission('finance:billing:read-only');
+  const canViewSettings = hasPermission('organization:settings:read-only');
+  const canViewAudit = hasPermission('audit:logs:read-only');
+  const canViewSchemas = hasPermission('content:schemas:read-only');
+  const canViewRules = hasPermission('content:rules:read-only');
 
   const isActive = (href: string) => pathname === href || pathname.startsWith(href + '/');
 
@@ -266,49 +277,52 @@ export function NavigationSidebar({ activeSpace, isMobileOpen, onMobileClose, is
         return (
           <>
             <nav className="flex flex-col gap-1">
-              {/* Organization - always available */}
-              <NavLink
-                href="/administration/organization"
-                icon={Building2}
-                label="Organization"
-                isActive={isActive('/administration/organization')}
-                onClick={onMobileClose}
-              />
-
-              {/* Team items - Pro+ only */}
-              {isPersonalWorkspace ? (
-                <>
-                  {adminTeamItems.map((item) => (
-                    <LockedNavLink key={item.href} icon={item.icon} label={item.label} onClick={handleUpgradeClick} />
-                  ))}
-                </>
-              ) : (
-                <>
-                  {adminTeamItems.map((item) => (
-                    <NavLink
-                      key={item.href}
-                      href={item.href}
-                      icon={item.icon}
-                      label={item.label}
-                      isActive={isActive(item.href)}
-                      onClick={onMobileClose}
-                    />
-                  ))}
-                </>
+              {/* Organization - available if user can view settings */}
+              {canViewSettings && (
+                <NavLink
+                  href="/administration/organization"
+                  icon={Building2}
+                  label="Organization"
+                  isActive={isActive('/administration/organization')}
+                  onClick={onMobileClose}
+                />
               )}
 
-              {/* Billing - always available */}
-              <NavLink
-                href="/administration/billing"
-                icon={CreditCard}
-                label="Billing"
-                isActive={isActive('/administration/billing')}
-                onClick={onMobileClose}
-              />
+              {/* Team items - requires membership permission + Pro+ tier */}
+              {canViewTeam ? (
+                isPersonalWorkspace ? (
+                  // Has permission but tier too low - show upgrade prompt
+                  <LockedNavLink
+                    icon={UsersIcon}
+                    label="Team Members"
+                    onClick={handleUpgradeClick}
+                  />
+                ) : (
+                  // Has permission and tier - show link
+                  <NavLink
+                    href="/administration/team"
+                    icon={UsersIcon}
+                    label="Team Members"
+                    isActive={isActive('/administration/team')}
+                    onClick={onMobileClose}
+                  />
+                )
+              ) : null}
+
+              {/* Billing - available if user can view billing */}
+              {canViewBilling && (
+                <NavLink
+                  href="/administration/billing"
+                  icon={CreditCard}
+                  label="Billing"
+                  isActive={isActive('/administration/billing')}
+                  onClick={onMobileClose}
+                />
+              )}
             </nav>
 
             {/* Upgrade CTA for personal workspaces */}
-            {isPersonalWorkspace && (
+            {isPersonalWorkspace && canViewBilling && (
               <div
                 className="mt-4 p-3 rounded-lg bg-linear-to-r from-primary/5 to-primary/10 cursor-pointer hover:from-primary/10 hover:to-primary/15 transition-colors"
                 onClick={handleUpgradeClick}
@@ -324,29 +338,59 @@ export function NavigationSidebar({ activeSpace, isMobileOpen, onMobileClose, is
             <div className="mt-6">
               <h3 className="px-3 text-xs font-medium text-sidebar-muted uppercase tracking-wider mb-2">Security</h3>
               <nav className="flex flex-col gap-1">
-                {adminSecurityItems.map((item) => (
-                  <NavLink
-                    key={item.href}
-                    href={item.href}
-                    icon={item.icon}
-                    label={item.label}
-                    isActive={isActive(item.href)}
-                    onClick={onMobileClose}
-                  />
-                ))}
-                {/* Enterprise-only items */}
-                {adminEnterpriseItems.map((item) => (
-                  <EnterpriseNavLink
-                    key={item.href}
-                    href={item.href}
-                    icon={item.icon}
-                    label={item.label}
-                    isActive={isActive(item.href)}
-                    isEnterprise={isEnterprise}
-                    onClick={onMobileClose}
-                    onUpgradeClick={handleUpgradeClick}
-                  />
-                ))}
+                {/* Security settings - available if user can view settings */}
+                {canViewSettings && (
+                  <>
+                    <NavLink
+                      href="/administration/security"
+                      icon={Shield}
+                      label="Security Settings"
+                      isActive={isActive('/administration/security')}
+                      onClick={onMobileClose}
+                    />
+                    <NavLink
+                      href="/administration/apikeys"
+                      icon={Key}
+                      label="API Keys"
+                      isActive={isActive('/administration/apikeys')}
+                      onClick={onMobileClose}
+                    />
+                  </>
+                )}
+
+                {/* Audit logs - requires audit permission + enterprise tier */}
+                {canViewAudit ? (
+                  isEnterprise ? (
+                    <Link
+                      href="/administration/audit"
+                      onClick={onMobileClose}
+                      className={cn(
+                        'flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors',
+                        isActive('/administration/audit')
+                          ? 'bg-sidebar-accent text-sidebar-accent-foreground font-medium'
+                          : 'text-sidebar-foreground hover:bg-sidebar-accent',
+                      )}
+                    >
+                      <Activity className="h-4 w-4" />
+                      <span className="flex-1">Audit Logs</span>
+                      <span className="text-[9px] font-medium px-1.5 py-0.5 rounded bg-violet-100 text-violet-700 dark:bg-violet-500/20 dark:text-violet-400">
+                        Enterprise
+                      </span>
+                    </Link>
+                  ) : (
+                    <button
+                      onClick={handleUpgradeClick}
+                      className="flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors text-sidebar-muted hover:bg-sidebar-accent/50 w-full text-left group"
+                    >
+                      <Activity className="h-4 w-4" />
+                      <span className="flex-1">Audit Logs</span>
+                      <span className="flex items-center gap-1 text-[9px] font-medium px-1.5 py-0.5 rounded bg-violet-100 text-violet-700 dark:bg-violet-500/20 dark:text-violet-400 opacity-80 group-hover:opacity-100">
+                        <Lock className="h-2.5 w-2.5" />
+                        Enterprise
+                      </span>
+                    </button>
+                  )
+                ) : null}
               </nav>
             </div>
           </>

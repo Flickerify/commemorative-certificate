@@ -14,5 +14,8 @@ export {
   RequireAnyPermission,
   RequireAllPermissions,
   RequireOrgAdmin,
+  // Page-level guards
+  PermissionPageGuard,
+  AnyPermissionPageGuard,
 } from './require-permission';
 

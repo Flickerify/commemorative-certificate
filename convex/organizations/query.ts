@@ -60,7 +60,7 @@ export const getOrganizationsByUserId = protectedQuery({
 
           return {
             ...organization,
-            role: membership.role,
+            roleSlug: membership.roleSlug,
             subscriptionTier,
             hasActiveSubscription,
           };
@@ -107,9 +107,7 @@ export const getCurrent = protectedQuery({
     // Get subscription tier using indexed query
     const activeSubscription = await ctx.db
       .query('organizationSubscriptions')
-      .withIndex('by_organization_and_status', (q) =>
-        q.eq('organizationId', organization._id).eq('status', 'active'),
-      )
+      .withIndex('by_organization_and_status', (q) => q.eq('organizationId', organization._id).eq('status', 'active'))
       .first();
 
     const subscriptionTier = activeSubscription?.tier || 'personal';
@@ -119,7 +117,7 @@ export const getCurrent = protectedQuery({
       ...organization,
       domains,
       memberCount: memberships.length,
-      currentUserRole: currentUserMembership?.role || 'member',
+      currentUserRole: currentUserMembership?.roleSlug || 'member',
       subscriptionTier,
       hasActiveSubscription,
     };
@@ -184,7 +182,7 @@ export const isAdmin = protectedQuery({
       return false;
     }
 
-    return membership.role === 'admin' || membership.role === 'owner';
+    return membership.roleSlug === 'admin' || membership.roleSlug === 'owner';
   },
 });
 
@@ -205,6 +203,6 @@ export const isOwner = protectedQuery({
       return false;
     }
 
-    return membership.role === 'owner';
+    return membership.roleSlug === 'owner';
   },
 });

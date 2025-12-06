@@ -55,7 +55,7 @@ export const listAuditLogs = protectedQuery({
       .withIndex('by_org_user', (q) => q.eq('organizationId', args.organizationId).eq('userId', ctx.user.externalId))
       .first();
 
-    if (!membership || (membership.role !== 'admin' && membership.role !== 'owner')) {
+    if (!membership || (membership.roleSlug !== 'admin' && membership.roleSlug !== 'owner')) {
       throw new Error('Only admins can view audit logs');
     }
 
@@ -182,7 +182,7 @@ export const getAuditLog = protectedQuery({
       .withIndex('by_org_user', (q) => q.eq('organizationId', args.organizationId).eq('userId', ctx.user.externalId))
       .first();
 
-    if (!membership || (membership.role !== 'admin' && membership.role !== 'owner')) {
+    if (!membership || (membership.roleSlug !== 'admin' && membership.roleSlug !== 'owner')) {
       throw new Error('Only admins can view audit logs');
     }
 
@@ -228,7 +228,7 @@ export const getAuditOverview = protectedQuery({
       .withIndex('by_org_user', (q) => q.eq('organizationId', args.organizationId).eq('userId', ctx.user.externalId))
       .first();
 
-    const isAdmin = membership?.role === 'admin' || membership?.role === 'owner';
+    const isAdmin = membership?.roleSlug === 'admin' || membership?.roleSlug === 'owner';
 
     if (!isEnterprise) {
       return {
@@ -328,7 +328,7 @@ export const searchOrganizationMembers = protectedQuery({
       .withIndex('by_org_user', (q) => q.eq('organizationId', args.organizationId).eq('userId', ctx.user.externalId))
       .first();
 
-    if (!membership || (membership.role !== 'admin' && membership.role !== 'owner')) {
+    if (!membership || (membership.roleSlug !== 'admin' && membership.roleSlug !== 'owner')) {
       throw new Error('Only admins can search members');
     }
 
@@ -364,7 +364,7 @@ export const searchOrganizationMembers = protectedQuery({
           name: fullName,
           firstName: user.firstName,
           lastName: user.lastName,
-          role: m.role ?? 'member',
+          role: m.roleSlug ?? 'member',
         });
       }
     }

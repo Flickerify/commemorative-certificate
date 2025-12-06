@@ -148,12 +148,12 @@ export const organizationDomains = defineTable({
 });
 
 export const organizationMemberships = defineTable({
-  organizationId: v.string(),
-  userId: v.string(),
-  role: v.optional(v.string()), // Legacy field - WorkOS role object as string
-  roleSlug: v.optional(v.string()), // Role slug from WorkOS (e.g., 'owner', 'admin', 'member')
-  permissions: v.optional(v.array(v.string())), // Denormalized permissions array for fast lookups
+  organizationId: v.string(), // WorkOS organization externalId
+  userId: v.string(), // WorkOS user externalId
+  roleSlug: v.optional(v.string()), // Role slug from WorkOS (e.g., 'owner', 'admin', 'member', 'finance')
+  permissions: v.optional(v.array(v.string())), // Denormalized permissions from JWT for fast lookups
   status: organizationMembershipStatusValidator,
+  createdAt: v.optional(v.number()),
   updatedAt: v.number(),
 });
 

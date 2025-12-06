@@ -5,6 +5,7 @@ import { useAuth } from '@workos-inc/authkit-nextjs/components';
 import { useQuery, usePaginatedQuery } from 'convex/react';
 import { api } from '@/convex/_generated/api';
 import { PageShell } from '@/components/dashboard/page-shell';
+import { PermissionPageGuard } from '@/components/rbac';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
@@ -462,6 +463,19 @@ function DateRangePicker({ startDate, endDate, onStartDateChange, onEndDateChang
 }
 
 export default function AuditPage() {
+  // Protect page with permission guard
+  return (
+    <PermissionPageGuard
+      permission="audit:logs:read-only"
+      redirectTo="/administration/billing"
+      deniedMessage="You don't have permission to view audit logs. This feature requires the audit:logs:read-only permission."
+    >
+      <AuditPageContent />
+    </PermissionPageGuard>
+  );
+}
+
+function AuditPageContent() {
   const { organizationId } = useAuth();
   const [activeTab, setActiveTab] = useState('logs');
 

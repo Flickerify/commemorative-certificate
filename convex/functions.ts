@@ -11,6 +11,8 @@ import {
   internalQuery as baseInternalQuery,
   mutation as baseMutation,
   query as baseQuery,
+  type MutationCtx,
+  type QueryCtx,
 } from './_generated/server';
 
 import { getCurrentUserOrThrow } from './users/utils';
@@ -147,17 +149,14 @@ import { hasPermission } from './rbac/utils';
  * Uses the organizationId from the function args.
  */
 async function checkUserOrgPermission(
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  ctx: any,
+  ctx: QueryCtx | MutationCtx,
   userExternalId: string,
   orgExternalId: string,
   permission: string,
 ): Promise<{ hasPermission: boolean; permissions: string[] }> {
   const membership = await ctx.db
     .query('organizationMemberships')
-    .withIndex('by_org_user', (q: { eq: (f: string, v: string) => { eq: (f: string, v: string) => unknown } }) =>
-      q.eq('organizationId', orgExternalId).eq('userId', userExternalId),
-    )
+    .withIndex('by_org_user', (q) => q.eq('organizationId', orgExternalId).eq('userId', userExternalId))
     .first();
 
   if (!membership) {
@@ -172,7 +171,7 @@ async function checkUserOrgPermission(
   } else if (membership.roleSlug) {
     const role = await ctx.db
       .query('roles')
-      .withIndex('by_slug', (q: { eq: (f: string, v: string) => unknown }) => q.eq('slug', membership.roleSlug))
+      .withIndex('by_slug', (q) => q.eq('slug', membership.roleSlug!))
       .first();
     permissions = role?.permissions ?? [];
   }
@@ -204,7 +203,7 @@ export function protectedQueryWithPermission(permission: string) {
         return {
           ...ctx,
           user,
-          permissions: ['org:admin'], // Grant full access
+          permissions: ['organization:administration:manage'], // Grant full access
           checkPermission: () => true,
         };
       }
@@ -215,11 +214,11 @@ export function protectedQueryWithPermission(permission: string) {
         // Permission will be checked in the handler using organizationId from args
         requiredPermission: permission,
         async checkPermission(orgExternalId: string): Promise<boolean> {
-          const result = await checkUserOrgPermission(ctx as any, user.externalId, orgExternalId, permission);
+          const result = await checkUserOrgPermission(ctx, user.externalId, orgExternalId, permission);
           return result.hasPermission;
         },
         async requirePermission(orgExternalId: string): Promise<void> {
-          const result = await checkUserOrgPermission(ctx as any, user.externalId, orgExternalId, permission);
+          const result = await checkUserOrgPermission(ctx, user.externalId, orgExternalId, permission);
           if (!result.hasPermission) {
             throw new ConvexError(`Missing permission: ${permission}`);
           }
@@ -244,7 +243,7 @@ export function protectedMutationWithPermission(permission: string) {
         return {
           ...ctx,
           user,
-          permissions: ['org:admin'],
+          permissions: ['organization:administration:manage'],
           checkPermission: () => true,
         };
       }
@@ -254,11 +253,11 @@ export function protectedMutationWithPermission(permission: string) {
         user,
         requiredPermission: permission,
         async checkPermission(orgExternalId: string): Promise<boolean> {
-          const result = await checkUserOrgPermission(ctx as any, user.externalId, orgExternalId, permission);
+          const result = await checkUserOrgPermission(ctx, user.externalId, orgExternalId, permission);
           return result.hasPermission;
         },
         async requirePermission(orgExternalId: string): Promise<void> {
-          const result = await checkUserOrgPermission(ctx as any, user.externalId, orgExternalId, permission);
+          const result = await checkUserOrgPermission(ctx, user.externalId, orgExternalId, permission);
           if (!result.hasPermission) {
             throw new ConvexError(`Missing permission: ${permission}`);
           }
@@ -291,7 +290,7 @@ export function protectedActionWithPermission(permission: string) {
         return {
           ...ctx,
           user: finalUser,
-          permissions: ['org:admin'],
+          permissions: ['organization:administration:manage'],
           checkPermission: () => Promise.resolve(true),
         };
       }
@@ -321,10 +320,49 @@ export function protectedActionWithPermission(permission: string) {
   );
 }
 
+// ============================================================
+// CONVENIENCE BUILDERS FOR COMMON PERMISSION PATTERNS
+// ============================================================
+
 /**
- * Convenience builder for org admin permission.
- * Requires 'org:admin' permission for full organization access.
+ * Super admin: Requires 'organization:administration:manage' permission.
+ * Grants full access to everything in the organization.
  */
-export const protectedOrgAdminQuery = protectedQueryWithPermission('org:admin');
-export const protectedOrgAdminMutation = protectedMutationWithPermission('org:admin');
-export const protectedOrgAdminAction = protectedActionWithPermission('org:admin');
+export const protectedOrgAdminQuery = protectedQueryWithPermission('organization:administration:manage');
+export const protectedOrgAdminMutation = protectedMutationWithPermission('organization:administration:manage');
+export const protectedOrgAdminAction = protectedActionWithPermission('organization:administration:manage');
+
+// -- Content domain --
+export const protectedSchemasReadQuery = protectedQueryWithPermission('content:schemas:read-only');
+export const protectedSchemasManageQuery = protectedQueryWithPermission('content:schemas:manage');
+export const protectedSchemasManageMutation = protectedMutationWithPermission('content:schemas:manage');
+
+export const protectedRulesReadQuery = protectedQueryWithPermission('content:rules:read-only');
+export const protectedRulesManageQuery = protectedQueryWithPermission('content:rules:manage');
+export const protectedRulesManageMutation = protectedMutationWithPermission('content:rules:manage');
+
+// -- Organization domain --
+export const protectedMembershipReadQuery = protectedQueryWithPermission('organization:membership:read-only');
+export const protectedMembershipManageQuery = protectedQueryWithPermission('organization:membership:manage');
+export const protectedMembershipManageMutation = protectedMutationWithPermission('organization:membership:manage');
+export const protectedMembershipInviteMutation = protectedMutationWithPermission('organization:membership:invite');
+
+export const protectedSettingsReadQuery = protectedQueryWithPermission('organization:settings:read-only');
+export const protectedSettingsManageQuery = protectedQueryWithPermission('organization:settings:manage');
+export const protectedSettingsManageMutation = protectedMutationWithPermission('organization:settings:manage');
+
+// -- Finance domain --
+export const protectedBillingReadQuery = protectedQueryWithPermission('finance:billing:read-only');
+export const protectedBillingManageQuery = protectedQueryWithPermission('finance:billing:manage');
+export const protectedBillingManageMutation = protectedMutationWithPermission('finance:billing:manage');
+export const protectedBillingManageAction = protectedActionWithPermission('finance:billing:manage');
+
+export const protectedInvoicesReadQuery = protectedQueryWithPermission('finance:invoices:read-only');
+export const protectedInvoicesExportAction = protectedActionWithPermission('finance:invoices:export');
+
+export const protectedReportsReadQuery = protectedQueryWithPermission('finance:reports:read-only');
+export const protectedReportsExportAction = protectedActionWithPermission('finance:reports:export');
+
+// -- Audit domain --
+export const protectedAuditReadQuery = protectedQueryWithPermission('audit:logs:read-only');
+export const protectedAuditExportAction = protectedActionWithPermission('audit:logs:export');

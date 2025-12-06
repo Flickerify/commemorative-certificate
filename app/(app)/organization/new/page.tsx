@@ -187,7 +187,7 @@ export default function NewOrganizationPage() {
             {/* Organization Preview Card */}
             <div className="rounded-xl border border-border bg-card p-6 max-w-2xl mx-auto">
               <div className="flex items-start gap-4 mb-6">
-                <div className="h-16 w-16 rounded-xl bg-gradient-to-br from-primary to-primary/80 flex items-center justify-center text-primary-foreground font-bold text-xl">
+                <div className="h-16 w-16 rounded-xl bg-linear-to-br from-primary to-primary/80 flex items-center justify-center text-primary-foreground font-bold text-xl">
                   {name ? name.charAt(0).toUpperCase() : 'O'}
                 </div>
                 <div className="flex-1">

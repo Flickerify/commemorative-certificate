@@ -16,9 +16,10 @@ import { useAuth } from '@workos-inc/authkit-nextjs/components';
 import { Doc } from '@/convex/_generated/dataModel';
 import { useQuery } from 'convex/react';
 import { api } from '@/convex/_generated/api';
+import Image from 'next/image';
 
 type Organization = Doc<'organizations'> & {
-  role?: string;
+  roleSlug?: string;
   subscriptionTier?: string;
   hasActiveSubscription?: boolean;
 };
@@ -58,7 +59,7 @@ function OrgAvatar({
   };
 
   if (logo) {
-    return <img src={logo} alt={name} className={cn('rounded-lg object-cover', sizeClasses[size], className)} />;
+    return <Image src={logo} alt={name} className={cn('rounded-lg object-cover', sizeClasses[size], className)} />;
   }
 
   if (isPersonal) {
@@ -169,7 +170,7 @@ export function OrganizationSwitcher({ className }: { className?: string }) {
             />
             <div className="flex-1 min-w-0">
               <p className="font-medium text-sm truncate">{effectiveCurrentOrg.name}</p>
-              <p className="text-xs text-muted-foreground capitalize">{effectiveCurrentOrg.role || 'Member'}</p>
+              <p className="text-xs text-muted-foreground capitalize">{effectiveCurrentOrg.roleSlug || 'Member'}</p>
             </div>
             <span
               className={cn(
@@ -215,7 +216,7 @@ export function OrganizationSwitcher({ className }: { className?: string }) {
                           {plan}
                         </span>
                       </div>
-                      <p className="text-xs text-muted-foreground capitalize">{org.role || 'Owner'}</p>
+                      <p className="text-xs text-muted-foreground capitalize">{org.roleSlug || 'Owner'}</p>
                     </div>
                     {isCurrentOrg && <Check className="h-4 w-4 text-primary shrink-0" />}
                   </DropdownMenuItem>
@@ -260,7 +261,7 @@ export function OrganizationSwitcher({ className }: { className?: string }) {
                           {getTier(org)}
                         </span>
                       </div>
-                      <p className="text-xs text-muted-foreground capitalize">{org.role || 'Member'}</p>
+                      <p className="text-xs text-muted-foreground capitalize">{org.roleSlug || 'Member'}</p>
                     </div>
                     {isCurrentOrg && <Check className="h-4 w-4 text-primary shrink-0" />}
                   </DropdownMenuItem>

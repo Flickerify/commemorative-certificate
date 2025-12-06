@@ -1,5 +1,19 @@
 # Project Context
 
+## ⚠️ Development Phase Notice
+
+**This project is in active development (building phase).** When implementing features:
+
+- **DO NOT** maintain backward compatibility with previous implementations
+- **DO NOT** keep legacy fields or code "just in case"
+- **DO** remove deprecated code immediately when refactoring
+- **DO** clean up unused fields from schemas and data models
+- **DO** prioritize clean architecture over migration paths
+
+This policy applies to all code, schemas, and data structures. We can always add migration logic later if needed before production release.
+
+---
+
 ## Purpose
 
 Flickerify is a **multi-tenant compatibility checker SaaS platform**. Organizations create custom compatibility pages where end-users can check if products/items are compatible with their requirements (e.g., "Is this OBD device compatible with my vehicle?").

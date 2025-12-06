@@ -1,9 +1,7 @@
 'use client';
 
 import { createContext, useContext, useMemo, type ReactNode } from 'react';
-import { useQuery } from 'convex/react';
 import { useAuth } from '@workos-inc/authkit-nextjs/components';
-import { api } from '@/convex/_generated/api';
 
 /** The super admin permission that grants full access to everything */
 const SUPER_ADMIN_PERMISSION = 'organization:administration:manage';
@@ -60,22 +58,31 @@ interface PermissionProviderProps {
 }
 
 /**
- * Provider component that fetches and provides permission context.
- * Uses the current organization from WorkOS auth context.
+ * Provider component that provides permission context from WorkOS JWT.
+ *
+ * ARCHITECTURE NOTE:
+ * ==================
+ * Permissions come directly from the WorkOS JWT access token.
+ * This is the most efficient approach because:
+ * 1. No database queries needed
+ * 2. Permissions are always fresh (reflect current WorkOS state)
+ * 3. No round-trip latency
+ *
+ * The JWT includes:
+ * - `role`: the role of the selected organization membership
+ * - `permissions`: the permissions assigned to the role
+ *
+ * WorkOS is the SOURCE OF TRUTH for all RBAC data.
  */
 export function PermissionProvider({ children }: PermissionProviderProps) {
-  const { organizationId } = useAuth();
-
-  // Fetch permissions for current organization
-  const permissionsResult = useQuery(
-    api.rbac.query.getMyPermissions,
-    organizationId ? { organizationId } : 'skip',
-  );
+  // Get permissions directly from WorkOS JWT via useAuth
+  const { permissions: jwtPermissions, role, loading } = useAuth();
 
   const value = useMemo<PermissionContextValue>(() => {
-    const permissions = permissionsResult?.permissions ?? [];
-    const roleSlug = permissionsResult?.roleSlug;
-    const isLoading = permissionsResult === undefined;
+    // Permissions come directly from the JWT
+    const permissions = jwtPermissions ?? [];
+    const roleSlug = role;
+    const isLoading = loading;
 
     return {
       permissions,
@@ -86,7 +93,7 @@ export function PermissionProvider({ children }: PermissionProviderProps) {
       hasAllPermissions: (perms: string[]) => perms.every((p) => checkPermission(permissions, p)),
       isOrgAdmin: permissions.includes(SUPER_ADMIN_PERMISSION),
     };
-  }, [permissionsResult]);
+  }, [jwtPermissions, role, loading]);
 
   return <PermissionContext.Provider value={value}>{children}</PermissionContext.Provider>;
 }
@@ -161,4 +168,3 @@ export function useIsOrgAdmin(): boolean {
 
   return isOrgAdmin;
 }
-

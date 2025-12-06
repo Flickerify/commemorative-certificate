@@ -238,37 +238,37 @@ export default function OnboardingPage() {
 
     try {
       // 1. Create the organization with subscription
+      // Pass the locale so we can complete onboarding AFTER checkout succeeds
       const result = await createOrganization({
         name: orgName.trim(),
         priceId,
         tier: selectedPlan,
-        successUrl: `${window.location.origin}/?onboarding=complete`,
+        // Include locale in success URL so we can complete onboarding after payment
+        successUrl: `${window.location.origin}/?onboarding=complete&locale=${selectedLocale}`,
         cancelUrl: `${window.location.origin}/onboarding?step=plan&canceled=true`,
       });
 
-      // 2. Complete onboarding (save language preference)
-      await completeOnboarding({
-        preferredLocale: selectedLocale as 'en' | 'de' | 'fr' | 'it' | 'rm',
-      });
-
-      // 3. Switch to the new organization
-      // Wait for auth state to propagate before redirecting
+      // 2. Switch to the new organization FIRST (before marking onboarding complete)
+      // This ensures the user has access to the org when they return from Stripe
       await switchToOrganization(result.workosOrganizationId);
       console.log(`[Onboarding] Switched to organization: ${result.workosOrganizationId}`);
 
-      // Small delay to ensure auth cookies are set before redirect
-      await new Promise((resolve) => setTimeout(resolve, 1000));
-
-      // 4. Redirect to Stripe checkout for payment
-      // All plans require payment with a 30-day money-back guarantee
+      // 3. Redirect to Stripe checkout IMMEDIATELY
+      // Do NOT call completeOnboarding here - it will cause a race condition
+      // with the useEffect that redirects to / when onboardingComplete is true
+      // The onboarding will be completed when user returns from successful checkout
       const checkoutUrl = result.checkoutUrl;
       if (checkoutUrl) {
         console.log(`[Onboarding] Redirecting to Stripe checkout`);
+        // Use window.location.href for immediate redirect before React can re-render
         window.location.href = checkoutUrl;
       } else {
-        // Fallback - should not happen
+        // Fallback - should not happen, but complete onboarding anyway
         console.error(`[Onboarding] No checkout URL returned`);
-        window.location.href = '/?onboarding=complete';
+        await completeOnboarding({
+          preferredLocale: selectedLocale as 'en' | 'de' | 'fr' | 'it' | 'rm',
+        });
+        window.location.href = '/';
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to create organization');
@@ -649,7 +649,7 @@ export default function OnboardingPage() {
                       <h3 className="font-semibold text-lg">{onboardingContext.memberships[0].organizationName}</h3>
                       <div className="flex items-center gap-2 mt-1">
                         <Badge variant="secondary" className="capitalize">
-                          {onboardingContext.memberships[0].role}
+                          {onboardingContext.memberships[0].roleSlug}
                         </Badge>
                         {onboardingContext.memberships.length > 1 && (
                           <span className="text-sm text-muted-foreground">

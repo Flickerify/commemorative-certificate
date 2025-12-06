@@ -243,8 +243,7 @@ async function processEvent(
       await ctx.runMutation(internal.organizationMemberships.internal.mutation.upsertFromWorkos, {
         organizationId: getField(data, 'organizationId', 'organization_id', ''),
         userId: getField(data, 'userId', 'user_id', ''),
-        role: roleSlug, // Legacy field for backward compatibility
-        roleSlug, // New field for RBAC
+        roleSlug,
         status: data.status,
       });
       break;
