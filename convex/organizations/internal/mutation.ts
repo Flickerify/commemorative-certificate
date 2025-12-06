@@ -1,19 +1,12 @@
 import { v } from 'convex/values';
 import { internalMutation } from '../../functions';
-import { Metadata, metadataValidator } from '../../schema';
-
-// Cast WorkOS metadata to Convex Metadata type
-// WorkOS stores metadata as string values
-function toMetadata(workosMetadata: Record<string, string> | undefined): Metadata | undefined {
-  if (!workosMetadata || Object.keys(workosMetadata).length === 0) return undefined;
-  return workosMetadata as Metadata;
-}
+import { metadataValidator } from '../../schema';
 
 export const upsertFromWorkos = internalMutation({
   args: {
     externalId: v.string(),
     name: v.string(),
-    metadata: v.optional(metadataValidator),
+    metadata: v.optional(metadataValidator), // Still accepted but ignored - metadata is local-only
     domains: v.optional(
       v.array(
         v.object({
@@ -25,16 +18,19 @@ export const upsertFromWorkos = internalMutation({
     ),
   },
   async handler(ctx, args) {
-    const { domains, ...organizationArgs } = args;
+    const { domains, externalId, name } = args;
+    // Note: args.metadata is ignored - metadata is stored locally only
     const organization = await ctx.db
       .query('organizations')
-      .withIndex('externalId', (q) => q.eq('externalId', organizationArgs.externalId))
+      .withIndex('externalId', (q) => q.eq('externalId', externalId))
       .first();
 
     if (organization === null) {
+      // New organization: don't set metadata from WorkOS (it's local-only)
       const organizationId = await ctx.db.insert('organizations', {
-        ...organizationArgs,
-        metadata: toMetadata(organizationArgs.metadata),
+        externalId,
+        name,
+        // metadata is intentionally not set from WorkOS - will be set locally if needed
         updatedAt: Date.now(),
       });
       for (const domain of domains ?? []) {
@@ -50,7 +46,14 @@ export const upsertFromWorkos = internalMutation({
       return organizationId;
     }
 
-    await ctx.db.patch(organization._id, organizationArgs);
+    // Existing organization: update name but preserve local metadata
+    await ctx.db.patch(organization._id, {
+      externalId,
+      name,
+      // Keep existing metadata - don't overwrite with WorkOS data
+      metadata: organization.metadata,
+      updatedAt: Date.now(),
+    });
 
     const existingDomains = await ctx.db
       .query('organizationDomains')

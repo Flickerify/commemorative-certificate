@@ -4,7 +4,6 @@ import { v } from 'convex/values';
 import { internalAction } from '../../_generated/server';
 import { internal } from '../../_generated/api';
 import type { Id } from '../../_generated/dataModel';
-import type { Metadata } from '../../schema';
 import type { ActionCtx } from '../../_generated/server';
 import {
   UserCreatedEvent,
@@ -25,12 +24,6 @@ import {
   RoleUpdatedEvent,
   RoleDeletedEvent,
 } from '@workos-inc/node';
-
-// Cast WorkOS metadata to Convex Metadata type
-function toMetadata(workosMetadata: Record<string, string> | undefined): Metadata | undefined {
-  if (!workosMetadata || Object.keys(workosMetadata).length === 0) return undefined;
-  return workosMetadata as Metadata;
-}
 
 // Helper to get field value with camelCase/snake_case fallback
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -118,6 +111,7 @@ async function processEvent(
     // ============================================================
     case 'user.created': {
       const now = Date.now();
+      // Note: metadata from WorkOS is ignored - metadata is stored locally in Convex only
       const convexId: Id<'users'> = await ctx.runMutation(internal.users.internal.mutation.upsertFromWorkos, {
         externalId: data.id,
         email: data.email,
@@ -125,7 +119,6 @@ async function processEvent(
         firstName: getField(data, 'firstName', 'first_name', null),
         lastName: getField(data, 'lastName', 'last_name', null),
         profilePictureUrl: getField(data, 'profilePictureUrl', 'profile_picture_url', null),
-        metadata: toMetadata(data.metadata),
         updatedAt: now,
       });
 
@@ -142,6 +135,7 @@ async function processEvent(
 
     case 'user.updated': {
       const now = Date.now();
+      // Note: metadata from WorkOS is ignored - metadata is stored locally in Convex only
       const convexId: Id<'users'> = await ctx.runMutation(internal.users.internal.mutation.upsertFromWorkos, {
         externalId: data.id,
         email: data.email,
@@ -149,7 +143,6 @@ async function processEvent(
         firstName: getField(data, 'firstName', 'first_name', null),
         lastName: getField(data, 'lastName', 'last_name', null),
         profilePictureUrl: getField(data, 'profilePictureUrl', 'profile_picture_url', null),
-        metadata: toMetadata(data.metadata),
         updatedAt: now,
       });
 
@@ -175,12 +168,12 @@ async function processEvent(
     // ============================================================
     case 'organization.created': {
       const now = Date.now();
+      // Note: metadata from WorkOS is ignored - metadata is stored locally in Convex only
       const convexId: Id<'organizations'> = await ctx.runMutation(
         internal.organizations.internal.mutation.upsertFromWorkos,
         {
           externalId: data.id,
           name: data.name,
-          metadata: data.metadata,
           domains: (data.domains ?? []).map((domain: { domain: string; id: string; state: string }) => ({
             domain: domain.domain,
             externalId: domain.id,
@@ -201,12 +194,12 @@ async function processEvent(
 
     case 'organization.updated': {
       const now = Date.now();
+      // Note: metadata from WorkOS is ignored - metadata is stored locally in Convex only
       const convexId: Id<'organizations'> = await ctx.runMutation(
         internal.organizations.internal.mutation.upsertFromWorkos,
         {
           externalId: data.id,
           name: data.name,
-          metadata: data.metadata,
           domains: (data.domains ?? []).map((domain: { domain: string; id: string; state: string }) => ({
             domain: domain.domain,
             externalId: domain.id,

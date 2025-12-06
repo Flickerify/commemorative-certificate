@@ -25,8 +25,8 @@ export default function NotificationsPage() {
   useEffect(() => {
     if (user && !hasInitializedRef.current) {
       hasInitializedRef.current = true;
-      setEmailNotifications(user.metadata?.emailNotifications !== 'false');
-      setMarketingEmails(user.metadata?.marketingEmails === 'true');
+      setEmailNotifications(user.metadata?.emailNotifications !== false);
+      setMarketingEmails(user.metadata?.marketingEmails === true);
     }
   }, [user]);
 
@@ -162,4 +162,3 @@ export default function NotificationsPage() {
     </PageShell>
   );
 }
-

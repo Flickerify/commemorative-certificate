@@ -83,8 +83,8 @@ export function UserAccountDropdown({ className }: { className?: string }) {
       }
 
       // Sync notification preferences
-      setEmailNotifications(user.metadata.emailNotifications !== 'false');
-      setMarketingEmails(user.metadata.marketingEmails === 'true');
+      setEmailNotifications(user.metadata.emailNotifications !== false);
+      setMarketingEmails(user.metadata.marketingEmails === true);
     }
   }, [user?.metadata, theme, setTheme]);
 

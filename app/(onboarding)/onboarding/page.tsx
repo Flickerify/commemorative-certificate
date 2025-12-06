@@ -140,13 +140,13 @@ export default function OnboardingPage() {
 
   // Redirect if already onboarded
   useEffect(() => {
-    if (user?.metadata?.onboardingComplete === 'true') {
+    if (user?.metadata?.onboardingComplete === true) {
       router.replace('/');
     }
   }, [user?.metadata?.onboardingComplete, router]);
 
   // Show nothing while redirecting
-  if (user?.metadata?.onboardingComplete === 'true') {
+  if (user?.metadata?.onboardingComplete === true) {
     return null;
   }
 
@@ -210,8 +210,8 @@ export default function OnboardingPage() {
         console.log(`[Onboarding] Switched to organization: ${firstOrg.organizationId}`);
       }
 
-      // Redirect to dashboard
-      router.replace('/');
+      // Redirect to dashboard with ?onboarding=complete to prevent redirect loop
+      window.location.href = '/?onboarding=complete';
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to complete onboarding');
       setIsSubmitting(false);
@@ -237,39 +237,32 @@ export default function OnboardingPage() {
     }
 
     try {
-      // 1. Create the organization with subscription
-      // Pass the locale so we can complete onboarding AFTER checkout succeeds
+      // 1. Create the organization with free trial subscription (no payment required)
       const result = await createOrganization({
         name: orgName.trim(),
         priceId,
         tier: selectedPlan,
-        // Include locale in success URL so we can complete onboarding after payment
-        successUrl: `${window.location.origin}/?onboarding=complete&locale=${selectedLocale}`,
+        // Use ?onboarding=complete to signal to OnboardingGuard that we just finished
+        successUrl: `${window.location.origin}/?onboarding=complete`,
         cancelUrl: `${window.location.origin}/onboarding?step=plan&canceled=true`,
       });
+      console.log(`[Onboarding] Created organization: ${result.workosOrganizationId}`);
 
-      // 2. Switch to the new organization FIRST (before marking onboarding complete)
-      // This ensures the user has access to the org when they return from Stripe
+      // 2. Complete onboarding FIRST while still authenticated
+      // IMPORTANT: Must happen BEFORE switchToOrganization because switching
+      // organizations invalidates the current auth token
+      await completeOnboarding({
+        preferredLocale: selectedLocale as 'en' | 'de' | 'fr' | 'it' | 'rm',
+      });
+      console.log(`[Onboarding] Completed onboarding, free trial started`);
+
+      // 3. Switch to the new organization
+      // This will trigger a session refresh with the new org context
       await switchToOrganization(result.workosOrganizationId);
       console.log(`[Onboarding] Switched to organization: ${result.workosOrganizationId}`);
 
-      // 3. Redirect to Stripe checkout IMMEDIATELY
-      // Do NOT call completeOnboarding here - it will cause a race condition
-      // with the useEffect that redirects to / when onboardingComplete is true
-      // The onboarding will be completed when user returns from successful checkout
-      const checkoutUrl = result.checkoutUrl;
-      if (checkoutUrl) {
-        console.log(`[Onboarding] Redirecting to Stripe checkout`);
-        // Use window.location.href for immediate redirect before React can re-render
-        window.location.href = checkoutUrl;
-      } else {
-        // Fallback - should not happen, but complete onboarding anyway
-        console.error(`[Onboarding] No checkout URL returned`);
-        await completeOnboarding({
-          preferredLocale: selectedLocale as 'en' | 'de' | 'fr' | 'it' | 'rm',
-        });
-        window.location.href = '/';
-      }
+      // 4. Redirect to the app with ?onboarding=complete to prevent redirect loop
+      window.location.href = '/?onboarding=complete';
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to create organization');
       setIsSubmitting(false);
@@ -513,7 +506,9 @@ export default function OnboardingPage() {
             <div className="space-y-6">
               <div className="text-center">
                 <h2 className="text-2xl font-bold mb-2">Choose Your Plan</h2>
-                <p className="text-muted-foreground">All plans include a 30-day money-back guarantee.</p>
+                <p className="text-muted-foreground">
+                  All plans include a 14-day free trial — no credit card required.
+                </p>
               </div>
 
               {/* Billing toggle */}
@@ -587,10 +582,10 @@ export default function OnboardingPage() {
                 })}
               </div>
 
-              {/* Money-back guarantee note */}
+              {/* Free trial note */}
               <div className="flex items-center justify-center gap-2 text-sm text-muted-foreground">
                 <Shield className="h-4 w-4 text-emerald-500" />
-                <span>30-day money-back guarantee on all plans</span>
+                <span>14-day free trial on all plans — no credit card required</span>
               </div>
 
               {error && <p className="text-sm text-destructive text-center">{error}</p>}
@@ -608,7 +603,7 @@ export default function OnboardingPage() {
                     </>
                   ) : (
                     <>
-                      Continue to Payment
+                      Start Free Trial
                       <ArrowRight className="h-4 w-4" />
                     </>
                   )}

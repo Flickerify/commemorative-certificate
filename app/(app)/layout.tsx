@@ -1,6 +1,7 @@
 'use client';
 
 import { OnboardingGuard } from '@/components/onboarding-guard';
+import { SubscriptionGuard } from '@/components/subscription-guard';
 import Dashboard from '@/components/dashboard/dashboard';
 import { PermissionProvider } from '@/components/rbac';
 import { Authenticated } from 'convex/react';
@@ -11,7 +12,9 @@ export default function AuthenticatedLayout({ children }: { readonly children: R
     <Authenticated>
       <OnboardingGuard>
         <PermissionProvider>
-        <Dashboard>{children}</Dashboard>
+          <SubscriptionGuard>
+            <Dashboard>{children}</Dashboard>
+          </SubscriptionGuard>
         </PermissionProvider>
       </OnboardingGuard>
     </Authenticated>

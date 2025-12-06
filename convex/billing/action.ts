@@ -11,7 +11,7 @@ import {
   getBillingIntervalFromPriceId,
   isUpgrade,
   isDowngrade,
-  MONEY_BACK_GUARANTEE_DAYS,
+  FREE_TRIAL_DAYS,
 } from './stripe';
 import { WorkOS } from '@workos-inc/node';
 import type { Id } from '../_generated/dataModel';
@@ -250,9 +250,9 @@ export const createCheckoutSession = action({
 // SUBSCRIPTION PLAN CHANGES
 // ============================================================
 // Standard SaaS billing rules:
-// - UPGRADES: Immediate, pay prorated difference (no refund to card)
-// - DOWNGRADES: Scheduled at period end (no refund)
-// - CANCELLATION: Access until period end (no refund, except 30-day guarantee)
+// - UPGRADES: Immediate, pay prorated difference
+// - DOWNGRADES: Scheduled at period end
+// - CANCELLATION: Access until period end
 // ============================================================
 
 type UpdateSubscriptionResult = {
@@ -266,9 +266,7 @@ type UpdateSubscriptionResult = {
  *
  * Standard SaaS rules:
  * - Upgrades (higher tier or monthly→yearly): Immediate, prorated charge
- * - Downgrades (lower tier or yearly→monthly):
- *   - Within 30-day guarantee: Immediate with prorated refund
- *   - After 30 days: Scheduled at period end, no refund
+ * - Downgrades (lower tier or yearly→monthly): Scheduled at period end
  */
 export const updateSubscription = action({
   args: {
@@ -322,39 +320,7 @@ export const updateSubscription = action({
     const isIntervalUpgrade = currentTier === newTier && currentInterval === 'month' && newInterval === 'year';
     const isIntervalDowngrade = currentTier === newTier && currentInterval === 'year' && newInterval === 'month';
 
-    // 4. Check if within 30-day money-back guarantee for downgrades
-    let isWithinGuarantee = false;
-    let hasAlreadyDowngradedDuringGuarantee = false;
-
-    if (isTierDowngrade || isIntervalDowngrade) {
-      // Get all subscriptions to find the first one (for guarantee calculation)
-      const allSubscriptions = await stripe.subscriptions.list({
-        customer: customer.stripeCustomerId,
-        status: 'all',
-        limit: 100,
-      });
-
-      const firstSubscription = allSubscriptions.data.reduce((earliest, sub) => {
-        return sub.created < earliest.created ? sub : earliest;
-      });
-
-      const firstPaymentDate = firstSubscription.created * 1000;
-      const now = Date.now();
-      const daysSinceFirstPayment = Math.floor((now - firstPaymentDate) / (1000 * 60 * 60 * 24));
-      isWithinGuarantee = daysSinceFirstPayment <= MONEY_BACK_GUARANTEE_DAYS;
-
-      // Check if user has already used their one-time immediate downgrade during guarantee
-      if (isWithinGuarantee) {
-        type SubscriptionRecord = { hasDowngradedDuringGuarantee?: boolean } | null;
-        const subscriptionRecord: SubscriptionRecord = await ctx.runQuery(
-          internal.billing.query.getSubscriptionDowngradeStatus,
-          { organizationId: args.organizationId },
-        );
-        hasAlreadyDowngradedDuringGuarantee = subscriptionRecord?.hasDowngradedDuringGuarantee ?? false;
-      }
-    }
-
-    // 5. Apply change based on type
+    // 4. Apply change based on type
     if (isTierUpgrade || isIntervalUpgrade) {
       // ═══════════════════════════════════════════════════════════════
       // UPGRADE: Immediate change, customer pays prorated difference
@@ -379,120 +345,57 @@ export const updateSubscription = action({
         effectiveDate: new Date().toISOString(),
       };
     } else if (isTierDowngrade || isIntervalDowngrade) {
-      // Check if eligible for immediate downgrade with refund
-      const canImmediateDowngrade = isWithinGuarantee && !hasAlreadyDowngradedDuringGuarantee;
+      // ═══════════════════════════════════════════════════════════════
+      // DOWNGRADE: Scheduled at period end
+      // Customer keeps current plan until period ends
+      // ═══════════════════════════════════════════════════════════════
+      console.log(`[Stripe] Downgrade scheduled: ${currentTier}/${currentInterval} → ${newTier}/${newInterval}`);
 
-      if (canImmediateDowngrade) {
-        // ═══════════════════════════════════════════════════════════════
-        // DOWNGRADE WITHIN 30-DAY GUARANTEE (FIRST TIME): Immediate change with refund
-        // Customer gets prorated refund for unused time on higher plan
-        // ═══════════════════════════════════════════════════════════════
-        console.log(
-          `[Stripe] Immediate downgrade with refund (within guarantee, first downgrade): ${currentTier}/${currentInterval} → ${newTier}/${newInterval}`,
-        );
-
-        // Calculate prorated refund before making change
-        const upcomingInvoice = await stripe.invoices.createPreview({
-          customer: customer.stripeCustomerId,
-          subscription: currentSubscription.id,
-          subscription_details: {
-            items: [{ id: subscriptionItemId, price: args.priceId }],
-            proration_behavior: 'create_prorations',
-          },
-        });
-
-        // Find the proration credit amount (negative line items)
-        // Type assertion needed for Stripe's complex types
-        const prorationCredit = upcomingInvoice.lines.data
-          .filter((line) => (line as unknown as { proration?: boolean }).proration && line.amount < 0)
-          .reduce((sum, line) => sum + Math.abs(line.amount), 0);
-
-        // Update subscription immediately with proration (Stripe handles the credit)
-        await stripe.subscriptions.update(currentSubscription.id, {
-          items: [{ id: subscriptionItemId, price: args.priceId }],
-          proration_behavior: 'create_prorations',
-        });
-
-        // Mark that user has used their one-time immediate downgrade during guarantee
-        await ctx.runMutation(internal.billing.internal.mutation.markDowngradeDuringGuarantee, {
-          organizationId: args.organizationId,
-        });
-
-        // Sync updated subscription data
-        await ctx.runAction(internal.billing.action.syncStripeDataForCustomer, {
-          stripeCustomerId: customer.stripeCustomerId,
-        });
-
-        return {
-          success: true,
-          message: `Downgraded to ${newTier} (${newInterval}ly) immediately. Your account has been credited for unused time on your previous plan.`,
-          effectiveDate: new Date().toISOString(),
-          isImmediateRefund: true,
-          refundAmount: prorationCredit,
-        };
-      } else {
-        // ═══════════════════════════════════════════════════════════════
-        // DOWNGRADE SCHEDULED: Either outside guarantee OR already used one-time downgrade
-        // Customer keeps current plan until period ends, NO REFUND
-        // ═══════════════════════════════════════════════════════════════
-        const reasonForScheduled = hasAlreadyDowngradedDuringGuarantee
-          ? 'already used one-time immediate downgrade'
-          : 'outside 30-day guarantee';
-        console.log(
-          `[Stripe] Downgrade scheduled (${reasonForScheduled}): ${currentTier}/${currentInterval} → ${newTier}/${newInterval}`,
-        );
-
-        // Release any existing schedule
-        if (currentSubscription.schedule) {
-          const scheduleId =
-            typeof currentSubscription.schedule === 'string'
-              ? currentSubscription.schedule
-              : currentSubscription.schedule.id;
-          await stripe.subscriptionSchedules.release(scheduleId);
-        }
-
-        // Create schedule from subscription
-        const schedule = await stripe.subscriptionSchedules.create({
-          from_subscription: currentSubscription.id,
-        });
-
-        const periodStart: number = currentSubscription.items.data[0].current_period_start;
-        const periodEnd: number = currentSubscription.items.data[0].current_period_end;
-
-        // Update schedule with two phases
-        await stripe.subscriptionSchedules.update(schedule.id, {
-          phases: [
-            {
-              items: [{ price: currentPriceId, quantity: 1 }],
-              start_date: periodStart,
-              end_date: periodEnd,
-            },
-            {
-              items: [{ price: args.priceId, quantity: 1 }],
-              start_date: periodEnd,
-            },
-          ],
-          end_behavior: 'release',
-        });
-
-        // Sync to get the scheduled change in Convex
-        await ctx.runAction(internal.billing.action.syncStripeDataForCustomer, {
-          stripeCustomerId: customer.stripeCustomerId,
-        });
-
-        const effectiveDateStr: string = new Date(periodEnd * 1000).toISOString();
-
-        // Provide appropriate message based on reason
-        const userMessage = hasAlreadyDowngradedDuringGuarantee
-          ? `Downgrade to ${newTier} (${newInterval}ly) scheduled for ${new Date(periodEnd * 1000).toLocaleDateString()}. You've already used your one-time immediate downgrade during the guarantee period.`
-          : `Downgrade to ${newTier} (${newInterval}ly) scheduled for ${new Date(periodEnd * 1000).toLocaleDateString()}. You'll keep your current plan until then.`;
-
-        return {
-          success: true,
-          message: userMessage,
-          effectiveDate: effectiveDateStr,
-        };
+      // Release any existing schedule
+      if (currentSubscription.schedule) {
+        const scheduleId =
+          typeof currentSubscription.schedule === 'string'
+            ? currentSubscription.schedule
+            : currentSubscription.schedule.id;
+        await stripe.subscriptionSchedules.release(scheduleId);
       }
+
+      // Create schedule from subscription
+      const schedule = await stripe.subscriptionSchedules.create({
+        from_subscription: currentSubscription.id,
+      });
+
+      const periodStart: number = currentSubscription.items.data[0].current_period_start;
+      const periodEnd: number = currentSubscription.items.data[0].current_period_end;
+
+      // Update schedule with two phases
+      await stripe.subscriptionSchedules.update(schedule.id, {
+        phases: [
+          {
+            items: [{ price: currentPriceId, quantity: 1 }],
+            start_date: periodStart,
+            end_date: periodEnd,
+          },
+          {
+            items: [{ price: args.priceId, quantity: 1 }],
+            start_date: periodEnd,
+          },
+        ],
+        end_behavior: 'release',
+      });
+
+      // Sync to get the scheduled change in Convex
+      await ctx.runAction(internal.billing.action.syncStripeDataForCustomer, {
+        stripeCustomerId: customer.stripeCustomerId,
+      });
+
+      const effectiveDateStr: string = new Date(periodEnd * 1000).toISOString();
+
+      return {
+        success: true,
+        message: `Downgrade to ${newTier} (${newInterval}ly) scheduled for ${new Date(periodEnd * 1000).toLocaleDateString()}. You'll keep your current plan until then.`,
+        effectiveDate: effectiveDateStr,
+      };
     } else {
       // Same plan - no change needed
       return {
@@ -504,173 +407,68 @@ export const updateSubscription = action({
 });
 
 // ============================================================
-// 30-DAY MONEY-BACK GUARANTEE
+// FREE TRIAL SUBSCRIPTION
 // ============================================================
 
-type RefundEligibility = {
+export type TrialEligibility = {
   eligible: boolean;
   reason: string;
-  daysRemaining?: number;
-  refundableAmount?: number;
-  currency?: string;
+  trialDays?: number;
 };
 
 /**
- * Check if organization is eligible for the 30-day money-back guarantee refund.
- *
- * IMPORTANT: The 30-day guarantee is based on the FIRST EVER subscription start date
- * and NEVER resets when changing plans. This prevents abuse where users could
- * repeatedly change plans to reset their guarantee window.
+ * Check if organization is eligible for a free trial.
+ * Users can only use the free trial once per account.
  */
-export const checkRefundEligibility = action({
+export const checkTrialEligibility = action({
   args: {
     organizationId: v.id('organizations'),
   },
   returns: v.object({
     eligible: v.boolean(),
     reason: v.string(),
-    daysRemaining: v.optional(v.number()),
-    refundableAmount: v.optional(v.number()),
-    currency: v.optional(v.string()),
-    // Include info about whether user can get immediate downgrade with refund
-    canImmediateDowngradeWithRefund: v.optional(v.boolean()),
+    trialDays: v.optional(v.number()),
   }),
-  handler: async (ctx, args): Promise<RefundEligibility & { canImmediateDowngradeWithRefund?: boolean }> => {
-    // Get Stripe customer
-    type CustomerResult = { stripeCustomerId: string } | null;
-    const customer: CustomerResult = await ctx.runQuery(internal.billing.query.getStripeCustomer, {
+  handler: async (ctx, args): Promise<TrialEligibility> => {
+    // Check if organization has already used their trial
+    type TrialStatus = { hasUsedTrial?: boolean } | null;
+    const trialStatus: TrialStatus = await ctx.runQuery(internal.billing.query.getTrialStatus, {
       organizationId: args.organizationId,
     });
 
-    if (!customer) {
-      return { eligible: false, reason: 'No billing account found' };
-    }
-
-    // Get all subscriptions (including canceled) to find the FIRST EVER payment
-    // This is crucial - we look at ALL subscriptions to find the earliest one
-    const subscriptions = await stripe.subscriptions.list({
-      customer: customer.stripeCustomerId,
-      status: 'all',
-      limit: 100, // Get more to ensure we find the first one
-    });
-
-    if (subscriptions.data.length === 0) {
-      return { eligible: false, reason: 'No subscription history found' };
-    }
-
-    // Find the EARLIEST subscription start date (first ever payment)
-    // This date NEVER changes regardless of plan changes
-    const firstSubscription = subscriptions.data.reduce((earliest, sub) => {
-      return sub.created < earliest.created ? sub : earliest;
-    });
-
-    const firstPaymentDate = firstSubscription.created * 1000; // Convert to ms
-    const now = Date.now();
-    const daysSinceFirstPayment = Math.floor((now - firstPaymentDate) / (1000 * 60 * 60 * 24));
-    const guaranteeDays = MONEY_BACK_GUARANTEE_DAYS;
-
-    if (daysSinceFirstPayment > guaranteeDays) {
+    if (trialStatus?.hasUsedTrial) {
       return {
         eligible: false,
-        reason: `The 30-day money-back guarantee period has expired. Your first subscription started ${daysSinceFirstPayment} days ago on ${new Date(firstPaymentDate).toLocaleDateString()}.`,
-        canImmediateDowngradeWithRefund: false,
+        reason: 'You have already used your free trial. Please subscribe to continue.',
       };
     }
-
-    // Check if already refunded with money-back guarantee
-    const refunds = await stripe.refunds.list({
-      limit: 100,
-    });
-
-    // Get customer's charges to check for existing refunds
-    const charges = await stripe.charges.list({
-      customer: customer.stripeCustomerId,
-      limit: 100,
-    });
-
-    const customerChargeIds = new Set(charges.data.map((c) => c.id));
-    const hasExistingGuaranteeRefund = refunds.data.some((r) => {
-      const chargeId = typeof r.charge === 'string' ? r.charge : r.charge?.id;
-      return chargeId && customerChargeIds.has(chargeId) && r.metadata?.type === 'money_back_guarantee';
-    });
-
-    if (hasExistingGuaranteeRefund) {
-      return {
-        eligible: false,
-        reason: 'You have already used your 30-day money-back guarantee.',
-        canImmediateDowngradeWithRefund: false,
-      };
-    }
-
-    // Calculate refundable amount (total paid minus any previous refunds)
-    const invoices = await stripe.invoices.list({
-      customer: customer.stripeCustomerId,
-      status: 'paid',
-      limit: 50,
-    });
-
-    const totalPaid = invoices.data.reduce((sum, inv) => sum + inv.amount_paid, 0);
-    const existingRefundsTotal = refunds.data
-      .filter((r) => {
-        const chargeId = typeof r.charge === 'string' ? r.charge : r.charge?.id;
-        return chargeId && customerChargeIds.has(chargeId);
-      })
-      .reduce((sum, r) => sum + r.amount, 0);
-
-    const refundableAmount = totalPaid - existingRefundsTotal;
-
-    if (refundableAmount <= 0) {
-      return {
-        eligible: false,
-        reason: 'No refundable amount found.',
-        canImmediateDowngradeWithRefund: false,
-      };
-    }
-
-    const daysRemaining = guaranteeDays - daysSinceFirstPayment;
 
     return {
       eligible: true,
-      reason: `You are eligible for a full refund. ${daysRemaining} day${daysRemaining === 1 ? '' : 's'} remaining in your 30-day money-back guarantee (started ${new Date(firstPaymentDate).toLocaleDateString()}).`,
-      daysRemaining,
-      refundableAmount,
-      currency: invoices.data[0]?.currency ?? 'usd',
-      // Within guarantee period, user can downgrade immediately with prorated refund
-      canImmediateDowngradeWithRefund: true,
+      reason: `You are eligible for a ${FREE_TRIAL_DAYS}-day free trial. No credit card required.`,
+      trialDays: FREE_TRIAL_DAYS,
     };
   },
 });
 
-type RefundResult = {
-  success: boolean;
-  message: string;
-  refundId?: string;
-  refundedAmount?: number;
-  currency?: string;
-};
-
 /**
- * Request a full refund under the 30-day money-back guarantee.
- * This will:
- * 1. Verify eligibility
- * 2. Cancel all active subscriptions immediately
- * 3. Issue full refund for all payments
+ * Start a free trial subscription without requiring a credit card.
+ * The subscription will be canceled automatically if no payment method is added.
  */
-export const requestMoneyBackRefund = action({
+export const startFreeTrial = action({
   args: {
     organizationId: v.id('organizations'),
-    reason: v.optional(v.string()),
+    priceId: v.string(),
   },
   returns: v.object({
     success: v.boolean(),
     message: v.string(),
-    refundId: v.optional(v.string()),
-    refundedAmount: v.optional(v.number()),
-    currency: v.optional(v.string()),
+    subscriptionId: v.optional(v.string()),
+    trialEndsAt: v.optional(v.number()),
   }),
-  handler: async (ctx, args): Promise<RefundResult> => {
-    // 1. Check eligibility first
-    const eligibility: RefundEligibility = await ctx.runAction(api.billing.action.checkRefundEligibility, {
+  handler: async (ctx, args) => {
+    // 1. Check trial eligibility
+    const eligibility: TrialEligibility = await ctx.runAction(api.billing.action.checkTrialEligibility, {
       organizationId: args.organizationId,
     });
 
@@ -681,98 +479,98 @@ export const requestMoneyBackRefund = action({
       };
     }
 
-    // 2. Get Stripe customer
-    type CustomerResult = { stripeCustomerId: string } | null;
-    const customer: CustomerResult = await ctx.runQuery(internal.billing.query.getStripeCustomer, {
+    // 2. Get the organization
+    const organization = await ctx.runQuery(api.organizations.query.getOrganizationById, {
+      id: args.organizationId,
+    });
+    if (!organization) {
+      return { success: false, message: 'Organization not found' };
+    }
+
+    // 3. Get current user for email
+    const user = await ctx.runQuery(api.users.query.me);
+    if (!user) {
+      return { success: false, message: 'User not found' };
+    }
+
+    // 4. Get or create Stripe customer
+    const existingCustomer = await ctx.runQuery(internal.billing.query.getStripeCustomer, {
       organizationId: args.organizationId,
     });
 
-    if (!customer) {
-      return { success: false, message: 'No billing account found' };
+    let stripeCustomerId: string;
+
+    if (existingCustomer) {
+      stripeCustomerId = existingCustomer.stripeCustomerId;
+    } else {
+      // Create a new Stripe customer
+      console.log(`[Stripe] Creating customer for organization ${organization.name}`);
+
+      const newCustomer = await stripe.customers.create({
+        email: user.email,
+        name: organization.name,
+        metadata: {
+          workosOrganizationId: organization.externalId,
+          organizationName: organization.name,
+        },
+      });
+
+      await ctx.runMutation(internal.billing.internal.mutation.upsertStripeCustomer, {
+        organizationId: args.organizationId,
+        stripeCustomerId: newCustomer.id,
+      });
+
+      stripeCustomerId = newCustomer.id;
     }
 
+    // 5. Create subscription with free trial (no payment method required)
     try {
-      // 3. Cancel all active subscriptions immediately
-      const activeSubscriptions = await stripe.subscriptions.list({
-        customer: customer.stripeCustomerId,
-        status: 'active',
+      const subscription = await stripe.subscriptions.create({
+        customer: stripeCustomerId,
+        items: [{ price: args.priceId }],
+        trial_period_days: FREE_TRIAL_DAYS,
+        payment_settings: {
+          save_default_payment_method: 'on_subscription',
+        },
+        trial_settings: {
+          end_behavior: {
+            missing_payment_method: 'pause', // Pause if no payment method at trial end
+          },
+        },
+        metadata: {
+          organizationId: args.organizationId,
+          tier: getTierFromPriceId(args.priceId),
+        },
       });
 
-      for (const sub of activeSubscriptions.data) {
-        await stripe.subscriptions.cancel(sub.id, {
-          prorate: false, // No proration, we're doing full refund
-        });
-        console.log(`[Stripe] Canceled subscription ${sub.id} for money-back guarantee`);
-      }
+      const trialEndsAt = subscription.trial_end ? subscription.trial_end * 1000 : undefined;
+      const trialStartedAt = Date.now();
 
-      // 4. Get all successful charges for this customer and refund them
-      // Using charges directly is more reliable than trying to extract from invoices
-      const charges = await stripe.charges.list({
-        customer: customer.stripeCustomerId,
-        limit: 100,
+      // 6. Mark trial as used and store trial dates
+      await ctx.runMutation(internal.billing.internal.mutation.markTrialUsed, {
+        organizationId: args.organizationId,
+        trialStartedAt,
+        trialEndsAt: trialEndsAt ?? trialStartedAt + FREE_TRIAL_DAYS * 24 * 60 * 60 * 1000,
       });
 
-      // Filter to only successful, non-refunded charges
-      const refundableCharges = charges.data.filter(
-        (charge) => charge.status === 'succeeded' && !charge.refunded && charge.amount > 0,
-      );
-
-      console.log(`[Stripe] Found ${charges.data.length} total charges, ${refundableCharges.length} are refundable`);
-
-      let totalRefunded = 0;
-      const refundIds: string[] = [];
-      let currency = 'usd';
-
-      for (const charge of refundableCharges) {
-        console.log(
-          `[Stripe] Processing charge ${charge.id}: amount=${charge.amount}, currency=${charge.currency}, refunded=${charge.refunded}`,
-        );
-
-        try {
-          const refund = await stripe.refunds.create({
-            charge: charge.id,
-            reason: 'requested_by_customer',
-            metadata: {
-              type: 'money_back_guarantee',
-              organizationId: args.organizationId,
-              userReason: args.reason ?? 'Not specified',
-            },
-          });
-
-          totalRefunded += refund.amount;
-          refundIds.push(refund.id);
-          currency = refund.currency;
-          console.log(`[Stripe] Refunded ${refund.amount} ${refund.currency} from charge ${charge.id}`);
-        } catch (refundError) {
-          // Log but continue - some charges might already be partially refunded
-          console.error(`[Stripe] Failed to refund charge ${charge.id}:`, refundError);
-        }
-      }
-
-      // 5. Sync subscription data
+      // 7. Sync subscription data
       await ctx.runAction(internal.billing.action.syncStripeDataForCustomer, {
-        stripeCustomerId: customer.stripeCustomerId,
+        stripeCustomerId,
       });
 
-      if (totalRefunded === 0) {
-        return {
-          success: false,
-          message: 'No payments found to refund.',
-        };
-      }
+      console.log(`[Stripe] Started free trial for organization ${organization.name}`);
 
       return {
         success: true,
-        message: `Full refund of ${(totalRefunded / 100).toFixed(2)} ${currency.toUpperCase()} processed. Your subscription has been canceled.`,
-        refundId: refundIds[0],
-        refundedAmount: totalRefunded,
-        currency,
+        message: `Your ${FREE_TRIAL_DAYS}-day free trial has started! Add a payment method before it ends to continue using the service.`,
+        subscriptionId: subscription.id,
+        trialEndsAt,
       };
     } catch (error) {
-      console.error('[Stripe] Money-back refund error:', error);
+      console.error('[Stripe] Failed to start free trial:', error);
       return {
         success: false,
-        message: 'Failed to process refund. Please contact support.',
+        message: error instanceof Error ? error.message : 'Failed to start free trial. Please try again.',
       };
     }
   },
@@ -899,6 +697,7 @@ export const syncStripeDataForCustomer = internalAction({
             | 'paused'
             | 'trialing'
             | 'unpaid',
+          billingInterval: subscription.items.data[0].price.recurring?.interval as 'month' | 'year',
           priceId: subscription.items.data[0].price.id,
           currentPeriodStart: subscription.items.data[0].current_period_start,
           currentPeriodEnd: subscription.items.data[0].current_period_end,
@@ -906,7 +705,6 @@ export const syncStripeDataForCustomer = internalAction({
           cancelAt: subscription.cancel_at ?? undefined, // Pass the actual cancel timestamp
           paymentMethodBrand,
           paymentMethodLast4,
-          // Scheduled plan changes
           scheduledPriceId,
           stripeScheduleId,
         };

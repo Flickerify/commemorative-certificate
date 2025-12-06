@@ -43,19 +43,6 @@ export async function handleRegistrationActions(ctx: Context<WorkosHonoEnv>) {
     let payload: { timestamp: number; verdict: 'Allow' | 'Deny'; error_message?: string };
 
     if (workosActionContext.object === 'user_registration_action_context') {
-      // Schedule async user provisioning - fire and forget
-      // This pre-creates the user record before the user.created webhook arrives
-      // The webhook will update the record with the WorkOS user ID
-      const { userData } = workosActionContext;
-
-      await ctx.env.scheduler.runAfter(0, internal.users.internal.mutation.provisionFromRegistration, {
-        email: userData.email,
-        firstName: userData.firstName || undefined,
-        lastName: userData.lastName || undefined,
-      });
-
-      console.log(`[Registration] Scheduled provisioning for: ${userData.email}`);
-
       payload = {
         timestamp,
         verdict: 'Allow',

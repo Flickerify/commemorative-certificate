@@ -1,6 +1,7 @@
 import type { WorkosHonoEnv } from '../../types';
 import { env } from '../../env';
 import { Context } from 'hono';
+import { internal } from '../../_generated/api';
 
 /**
  * Manually sign an actions response for WorkOS using Web Crypto API.
@@ -41,6 +42,24 @@ export async function handleAuthenticationActions(ctx: Context<WorkosHonoEnv>) {
     let payload: { timestamp: number; verdict: 'Allow' | 'Deny'; error_message?: string };
 
     if (workosActionContext.object === 'authentication_action_context') {
+      // Schedule async user provisioning - fire and forget
+      // This pre-creates the user record before the user.created webhook arrives
+      // The webhook will update the record with the WorkOS user ID
+      // Note: metadata from WorkOS is ignored - metadata is stored locally in Convex only
+      const { user } = workosActionContext;
+
+      await ctx.env.scheduler.runAfter(0, internal.users.internal.mutation.upsertFromWorkos, {
+        externalId: user.id,
+        email: user.email,
+        emailVerified: user.emailVerified,
+        firstName: user.firstName,
+        lastName: user.lastName,
+        profilePictureUrl: user.profilePictureUrl,
+        updatedAt: Date.now(),
+      });
+
+      console.log(`[Authorization] Scheduled upsert for: ${user.email}`);
+
       payload = {
         timestamp,
         verdict: 'Allow',

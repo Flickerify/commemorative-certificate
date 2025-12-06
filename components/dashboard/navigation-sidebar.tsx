@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
-import { useQuery } from 'convex/react';
+import { useQuery, useAction } from 'convex/react';
 import { useAuth } from '@workos-inc/authkit-nextjs/components';
 import { api } from '@/convex/_generated/api';
 import { cn } from '@/lib/utils';
@@ -35,7 +35,13 @@ import {
   Bell,
   Lock,
   Sparkles,
+  Clock,
+  AlertCircle,
+  CreditCardIcon,
+  Info,
 } from 'lucide-react';
+import type { Id } from '@/convex/_generated/dataModel';
+import { useState } from 'react';
 import type { SpaceType } from './dashboard';
 
 interface NavigationSidebarProps {
@@ -194,14 +200,202 @@ function EnterpriseNavLink({
   );
 }
 
+// ============================================================
+// TRIAL STATUS BANNER
+// ============================================================
+
+interface TrialStatusBannerProps {
+  trialDaysRemaining: number;
+  hasPaymentMethod: boolean;
+  canManageBilling: boolean;
+  organizationId: Id<'organizations'>;
+  onMobileClose: () => void;
+}
+
+function TrialStatusBanner({
+  trialDaysRemaining,
+  hasPaymentMethod,
+  canManageBilling,
+  organizationId,
+  onMobileClose,
+}: TrialStatusBannerProps) {
+  const router = useRouter();
+  const createBillingPortalSession = useAction(api.billing.action.createBillingPortalSession);
+  const [isLoading, setIsLoading] = useState(false);
+
+  // Determine urgency level based on days remaining
+  const getUrgencyLevel = (): 'enjoy' | 'warning' | 'urgent' => {
+    if (trialDaysRemaining >= 10) return 'enjoy';
+    if (trialDaysRemaining >= 5) return 'warning';
+    return 'urgent';
+  };
+
+  const urgency = getUrgencyLevel();
+
+  const handleAddPaymentMethod = async () => {
+    if (!canManageBilling) {
+      // Just navigate to billing page if read-only
+      onMobileClose();
+      router.push('/administration/billing');
+      return;
+    }
+
+    setIsLoading(true);
+    try {
+      const returnUrl = `${window.location.origin}/administration/billing`;
+      const { url } = await createBillingPortalSession({
+        organizationId,
+        returnUrl,
+      });
+      window.location.href = url;
+    } catch (error) {
+      console.error('Failed to open billing portal:', error);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleViewBilling = () => {
+    onMobileClose();
+    router.push('/administration/billing');
+  };
+
+  // Icon and text color based on urgency
+  const getIconStyles = () => {
+    switch (urgency) {
+      case 'enjoy':
+        return 'text-blue-500';
+      case 'warning':
+        return 'text-amber-500';
+      case 'urgent':
+        return 'text-red-500';
+    }
+  };
+
+  // Message based on urgency and payment status
+  const getMessage = () => {
+    if (hasPaymentMethod) {
+      return {
+        title: 'Trial Active',
+        description: `${trialDaysRemaining} day${trialDaysRemaining === 1 ? '' : 's'} left. Payment method set.`,
+      };
+    }
+
+    switch (urgency) {
+      case 'enjoy':
+        return {
+          title: 'Free Trial',
+        };
+      case 'warning':
+        return {
+          title: 'Trial Halfway',
+        };
+      case 'urgent':
+        return {
+          title: 'Trial Ending!',
+        };
+    }
+  };
+
+  const { title, description } = getMessage();
+
+  return (
+    <div className="space-y-3">
+      {/* Header row */}
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <div
+            className={cn(
+              'h-5 w-5 rounded-full flex items-center justify-center',
+              urgency === 'enjoy' && 'bg-blue-500/20',
+              urgency === 'warning' && 'bg-amber-500/20',
+              urgency === 'urgent' && 'bg-red-500/20',
+            )}
+          >
+            {urgency === 'enjoy' ? (
+              <Sparkles className={cn('h-3 w-3', getIconStyles())} />
+            ) : urgency === 'warning' ? (
+              <Clock className={cn('h-3 w-3', getIconStyles())} />
+            ) : (
+              <AlertCircle className={cn('h-3 w-3', getIconStyles())} />
+            )}
+          </div>
+          <span className="text-xs font-medium text-sidebar-muted">{title}</span>
+        </div>
+        <span
+          className={cn(
+            'text-xs font-semibold tabular-nums',
+            urgency === 'enjoy' && 'text-blue-600 dark:text-blue-400',
+            urgency === 'warning' && 'text-amber-600 dark:text-amber-400',
+            urgency === 'urgent' && 'text-red-600 dark:text-red-400',
+          )}
+        >
+          {trialDaysRemaining}d left
+        </span>
+      </div>
+
+      {/* Progress bar */}
+      <div className="space-y-1.5">
+        <Progress
+          value={((14 - trialDaysRemaining) / 14) * 100}
+          className={cn(
+            'h-1.5',
+            urgency === 'enjoy' && '[&>div]:bg-blue-500',
+            urgency === 'warning' && '[&>div]:bg-amber-500',
+            urgency === 'urgent' && '[&>div]:bg-red-500',
+          )}
+        />
+      </div>
+
+      {/* Action button - only show if no payment method */}
+      {!hasPaymentMethod && (
+        <div className="pt-1">
+          {canManageBilling ? (
+            <Button
+              onClick={handleAddPaymentMethod}
+              disabled={isLoading}
+              size="sm"
+              className={cn(
+                'w-full h-7 text-xs font-medium',
+                urgency === 'enjoy' && 'bg-blue-500/10 text-blue-700 dark:text-blue-300 hover:bg-blue-500/20 border-0',
+                urgency === 'warning' &&
+                  'bg-amber-500/10 text-amber-700 dark:text-amber-300 hover:bg-amber-500/20 border-0',
+                urgency === 'urgent' && 'bg-red-600 text-white hover:bg-red-700 border-0',
+              )}
+              variant="outline"
+            >
+              <CreditCardIcon className="h-3 w-3 mr-1.5" />
+              Add Payment
+            </Button>
+          ) : (
+            <button
+              onClick={handleViewBilling}
+              className="w-full text-[10px] text-sidebar-muted hover:text-sidebar-foreground transition-colors flex items-center justify-center gap-1"
+            >
+              <Info className="h-3 w-3" />
+              Contact billing admin
+            </button>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function NavigationSidebar({ activeSpace, isMobileOpen, onMobileClose, isNavOpen }: NavigationSidebarProps) {
   const pathname = usePathname();
   const router = useRouter();
   const { organizationId } = useAuth();
-  const { hasPermission, isLoading: permissionsLoading } = usePermissions();
+  const { hasPermission } = usePermissions();
 
   // Fetch current organization (includes subscriptionTier from source of truth)
   const organization = useQuery(api.organizations.query.getCurrent, organizationId ? { organizationId } : 'skip');
+
+  // Fetch subscription data for trial banner
+  const subscription = useQuery(
+    api.billing.query.getOrganizationSubscription,
+    organization?._id ? { organizationId: organization._id as Id<'organizations'> } : 'skip',
+  );
 
   // Check subscription tiers (for upgrade prompts)
   const isPersonalWorkspace = organization?.subscriptionTier === 'personal';
@@ -211,6 +405,7 @@ export function NavigationSidebar({ activeSpace, isMobileOpen, onMobileClose, is
   const canViewTeam = hasPermission('organization:membership:read-only');
   const canManageTeam = hasPermission('organization:membership:manage');
   const canViewBilling = hasPermission('finance:billing:read-only');
+  const canManageBilling = hasPermission('finance:billing:manage');
   const canViewSettings = hasPermission('organization:settings:read-only');
   const canViewAudit = hasPermission('audit:logs:read-only');
   const canViewSchemas = hasPermission('content:schemas:read-only');
@@ -292,11 +487,7 @@ export function NavigationSidebar({ activeSpace, isMobileOpen, onMobileClose, is
               {canViewTeam ? (
                 isPersonalWorkspace ? (
                   // Has permission but tier too low - show upgrade prompt
-                  <LockedNavLink
-                    icon={UsersIcon}
-                    label="Team Members"
-                    onClick={handleUpgradeClick}
-                  />
+                  <LockedNavLink icon={UsersIcon} label="Team Members" onClick={handleUpgradeClick} />
                 ) : (
                   // Has permission and tier - show link
                   <NavLink
@@ -476,6 +667,24 @@ export function NavigationSidebar({ activeSpace, isMobileOpen, onMobileClose, is
 
           {/* Navigation */}
           <div className="flex-1 overflow-y-auto p-3">{getNavigationContent()}</div>
+
+          {/* Trial Status Banner - Only visible with billing permissions */}
+          {canViewBilling &&
+            subscription &&
+            !subscription.isPersonalWorkspace &&
+            subscription.isTrialing &&
+            subscription.trialDaysRemaining !== undefined &&
+            organization?._id && (
+              <div className="border-t border-sidebar-border p-4">
+                <TrialStatusBanner
+                  trialDaysRemaining={subscription.trialDaysRemaining}
+                  hasPaymentMethod={!!(subscription.paymentMethodBrand && subscription.paymentMethodLast4)}
+                  canManageBilling={canManageBilling}
+                  organizationId={organization._id as Id<'organizations'>}
+                  onMobileClose={onMobileClose}
+                />
+              </div>
+            )}
 
           {/* Usage Section */}
           <div className="border-t border-sidebar-border p-4">

@@ -11,17 +11,6 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Button } from '@/components/ui/button';
 import { BillingPortalButton } from './billing-portal-button';
 import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from '@/components/ui/dialog';
-import { Textarea } from '@/components/ui/textarea';
-import { Label } from '@/components/ui/label';
-import {
   IconCrown,
   IconBuilding,
   IconUser,
@@ -32,8 +21,7 @@ import {
   IconLoader2,
   IconCreditCard,
   IconRefresh,
-  IconShieldCheck,
-  IconCash,
+  IconClock,
   IconArrowDown,
   IconX,
 } from '@tabler/icons-react';
@@ -69,6 +57,7 @@ const tierConfig = {
 
 const statusConfig: Record<string, { label: string; variant: 'default' | 'secondary' | 'destructive' | 'outline' }> = {
   active: { label: 'Active', variant: 'default' },
+  trialing: { label: 'Trial', variant: 'secondary' },
   past_due: { label: 'Past Due', variant: 'destructive' },
   canceled: { label: 'Canceled', variant: 'outline' },
   incomplete: { label: 'Incomplete', variant: 'destructive' },
@@ -120,13 +109,10 @@ export function SubscriptionCard({ organizationId }: SubscriptionCardProps) {
           </div>
           <div className="flex items-center gap-2">
             <Badge variant={statusInfo.variant}>{statusInfo.label}</Badge>
-            {subscription.isWithinGuaranteePeriod && (
-              <Badge
-                variant="secondary"
-                className="bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400"
-              >
-                <IconShieldCheck className="mr-1 h-3 w-3" />
-                Money-back guarantee
+            {subscription.isTrialing && (
+              <Badge variant="secondary" className="bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400">
+                <IconClock className="mr-1 h-3 w-3" />
+                Free trial
               </Badge>
             )}
           </div>
@@ -146,25 +132,6 @@ export function SubscriptionCard({ organizationId }: SubscriptionCardProps) {
           {!seatInfo.isUnlimited && <Progress value={seatInfo.utilizationPercent} className="h-2" />}
         </div>
 
-        {/* Money-back guarantee banner */}
-        {subscription.isWithinGuaranteePeriod && subscription.guaranteeDaysRemaining !== undefined && (
-          <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 p-4">
-            <div className="flex items-start gap-3">
-              <div className="rounded-full bg-emerald-500/20 p-2">
-                <IconShieldCheck className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
-              </div>
-              <div className="flex-1 space-y-2">
-                <p className="font-medium text-emerald-700 dark:text-emerald-300">30-day money-back guarantee</p>
-                <p className="text-sm text-emerald-600/80 dark:text-emerald-400/80">
-                  {subscription.guaranteeDaysRemaining} day{subscription.guaranteeDaysRemaining === 1 ? '' : 's'}{' '}
-                  remaining to request a full refund if you&apos;re not satisfied.
-                </p>
-                <MoneyBackRefundButton organizationId={organizationId} />
-              </div>
-            </div>
-          </div>
-        )}
-
         {/* Scheduled plan change (downgrade) */}
         {'hasScheduledChange' in subscription && subscription.hasScheduledChange && subscription.scheduledTier && (
           <ScheduledPlanChangeCard
@@ -177,15 +144,17 @@ export function SubscriptionCard({ organizationId }: SubscriptionCardProps) {
         )}
 
         {/* Cancel warning (only show if no scheduled change) */}
-        {subscription.cancelAtPeriodEnd && !('hasScheduledChange' in subscription && subscription.hasScheduledChange) && (subscription.cancelAt || subscription.currentPeriodEnd) && (
-          <div className="flex items-center gap-2 rounded-lg bg-amber-500/10 p-3 text-sm text-amber-600 dark:text-amber-400">
-            <IconAlertTriangle className="h-4 w-4 shrink-0" />
-            <span>
-              Subscription ends on{' '}
-              {new Date(subscription.cancelAt ?? subscription.currentPeriodEnd!).toLocaleDateString()}
-            </span>
-          </div>
-        )}
+        {subscription.cancelAtPeriodEnd &&
+          !('hasScheduledChange' in subscription && subscription.hasScheduledChange) &&
+          (subscription.cancelAt || subscription.currentPeriodEnd) && (
+            <div className="flex items-center gap-2 rounded-lg bg-amber-500/10 p-3 text-sm text-amber-600 dark:text-amber-400">
+              <IconAlertTriangle className="h-4 w-4 shrink-0" />
+              <span>
+                Subscription ends on{' '}
+                {new Date(subscription.cancelAt ?? subscription.currentPeriodEnd!).toLocaleDateString()}
+              </span>
+            </div>
+          )}
 
         {/* Features list */}
         <div className="space-y-2">
@@ -531,18 +500,12 @@ function ScheduledPlanChangeCard({
           <div className="flex-1 space-y-2">
             <p className="font-medium text-blue-700 dark:text-blue-300">Scheduled plan change</p>
             <p className="text-sm text-blue-600/80 dark:text-blue-400/80">
-              Your subscription will change from{' '}
-              <span className="font-medium capitalize">{currentTier}</span> to{' '}
+              Your subscription will change from <span className="font-medium capitalize">{currentTier}</span> to{' '}
               <span className="font-medium capitalize">{scheduledTier}</span>
               {scheduledBillingInterval && (
-                <span className="text-muted-foreground">
-                  {' '}({scheduledBillingInterval}ly billing)
-                </span>
+                <span className="text-muted-foreground"> ({scheduledBillingInterval}ly billing)</span>
               )}
-              {effectiveDate && (
-                <span> on {new Date(effectiveDate).toLocaleDateString()}</span>
-              )}
-              .
+              {effectiveDate && <span> on {new Date(effectiveDate).toLocaleDateString()}</span>}.
             </p>
             <div className="flex items-center gap-2 pt-1">
               <div className={`rounded p-1 ${scheduledConfig.color} text-white`}>
@@ -573,202 +536,5 @@ function ScheduledPlanChangeCard({
         </Button>
       </div>
     </div>
-  );
-}
-
-// ============================================================
-// MONEY-BACK GUARANTEE REFUND BUTTON
-// ============================================================
-
-interface MoneyBackRefundButtonProps {
-  organizationId: Id<'organizations'>;
-}
-
-function MoneyBackRefundButton({ organizationId }: MoneyBackRefundButtonProps) {
-  const [isOpen, setIsOpen] = useState(false);
-  const [isCheckingEligibility, setIsCheckingEligibility] = useState(false);
-  const [isProcessingRefund, setIsProcessingRefund] = useState(false);
-  const [reason, setReason] = useState('');
-  const [eligibility, setEligibility] = useState<{
-    eligible: boolean;
-    reason: string;
-    daysRemaining?: number;
-    refundableAmount?: number;
-    currency?: string;
-  } | null>(null);
-
-  const checkEligibility = useAction(api.billing.action.checkRefundEligibility);
-  const requestRefund = useAction(api.billing.action.requestMoneyBackRefund);
-
-  const handleOpenChange = async (open: boolean) => {
-    setIsOpen(open);
-    if (open && !eligibility) {
-      // Check eligibility when dialog opens
-      setIsCheckingEligibility(true);
-      try {
-        const result = await checkEligibility({ organizationId });
-        setEligibility(result);
-      } catch (error) {
-        console.error('Failed to check eligibility:', error);
-        toast.error('Failed to check refund eligibility');
-      } finally {
-        setIsCheckingEligibility(false);
-      }
-    }
-  };
-
-  const handleRequestRefund = async () => {
-    setIsProcessingRefund(true);
-    try {
-      const result = await requestRefund({
-        organizationId,
-        reason: reason || undefined,
-      });
-
-      if (result.success) {
-        toast.success('Refund processed successfully', {
-          description: result.message,
-        });
-        setIsOpen(false);
-        // Refresh the page to show updated subscription status
-        window.location.reload();
-      } else {
-        toast.error('Refund failed', {
-          description: result.message,
-        });
-      }
-    } catch (error) {
-      console.error('Failed to process refund:', error);
-      toast.error('Failed to process refund', {
-        description: error instanceof Error ? error.message : 'Please try again or contact support',
-      });
-    } finally {
-      setIsProcessingRefund(false);
-    }
-  };
-
-  const formatCurrency = (amount: number, currency: string) => {
-    return new Intl.NumberFormat('en-US', {
-      style: 'currency',
-      currency: currency.toUpperCase(),
-    }).format(amount / 100);
-  };
-
-  return (
-    <Dialog open={isOpen} onOpenChange={handleOpenChange}>
-      <DialogTrigger asChild>
-        <Button
-          variant="outline"
-          size="sm"
-          className="border-emerald-500/50 text-emerald-700 hover:bg-emerald-500/10 dark:text-emerald-400"
-        >
-          <IconCash className="mr-2 h-4 w-4" />
-          Request Refund
-        </Button>
-      </DialogTrigger>
-      <DialogContent className="sm:max-w-[425px]">
-        <DialogHeader>
-          <DialogTitle className="flex items-center gap-2">
-            <IconShieldCheck className="h-5 w-5 text-emerald-500" />
-            30-Day Money-Back Guarantee
-          </DialogTitle>
-          <DialogDescription>
-            Request a full refund within 30 days of your first payment if you&apos;re not satisfied.
-          </DialogDescription>
-        </DialogHeader>
-
-        {isCheckingEligibility ? (
-          <div className="flex items-center justify-center py-8">
-            <IconLoader2 className="h-8 w-8 animate-spin text-muted-foreground" />
-          </div>
-        ) : eligibility ? (
-          <div className="space-y-4 py-4">
-            {eligibility.eligible ? (
-              <>
-                {/* Eligible for refund */}
-                <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 p-4">
-                  <div className="flex items-center gap-2 mb-2">
-                    <IconCheck className="h-5 w-5 text-emerald-500" />
-                    <span className="font-medium text-emerald-700 dark:text-emerald-300">Eligible for refund</span>
-                  </div>
-                  <p className="text-sm text-muted-foreground">{eligibility.reason}</p>
-                </div>
-
-                {/* Refund amount */}
-                {eligibility.refundableAmount && eligibility.currency && (
-                  <div className="rounded-lg bg-muted p-4">
-                    <div className="text-sm text-muted-foreground mb-1">Refund amount</div>
-                    <div className="text-2xl font-bold">
-                      {formatCurrency(eligibility.refundableAmount, eligibility.currency)}
-                    </div>
-                    <p className="text-xs text-muted-foreground mt-1">
-                      This amount will be refunded to your original payment method.
-                    </p>
-                  </div>
-                )}
-
-                {/* Feedback (optional) */}
-                <div className="space-y-2">
-                  <Label htmlFor="reason">Why are you requesting a refund? (optional)</Label>
-                  <Textarea
-                    id="reason"
-                    placeholder="Help us improve by sharing your feedback…"
-                    value={reason}
-                    onChange={(e) => setReason(e.target.value)}
-                    className="resize-none"
-                    rows={3}
-                  />
-                </div>
-
-                {/* Warning */}
-                <div className="flex items-start gap-2 rounded-lg bg-amber-500/10 p-3 text-sm">
-                  <IconAlertTriangle className="h-4 w-4 shrink-0 text-amber-500 mt-0.5" />
-                  <div>
-                    <span className="font-medium text-amber-600 dark:text-amber-400">Important:</span>{' '}
-                    <span className="text-muted-foreground">
-                      This will cancel your subscription immediately and you will lose access to all paid features.
-                    </span>
-                  </div>
-                </div>
-              </>
-            ) : (
-              /* Not eligible */
-              <div className="rounded-lg border border-red-500/30 bg-red-500/10 p-4">
-                <div className="flex items-center gap-2 mb-2">
-                  <IconAlertTriangle className="h-5 w-5 text-red-500" />
-                  <span className="font-medium text-red-700 dark:text-red-300">Not eligible for refund</span>
-                </div>
-                <p className="text-sm text-muted-foreground">{eligibility.reason}</p>
-              </div>
-            )}
-          </div>
-        ) : null}
-
-        <DialogFooter>
-          <Button variant="outline" onClick={() => setIsOpen(false)}>
-            Cancel
-          </Button>
-          {eligibility?.eligible && (
-            <Button
-              variant="destructive"
-              onClick={handleRequestRefund}
-              disabled={isProcessingRefund}
-            >
-              {isProcessingRefund ? (
-                <>
-                  <IconLoader2 className="mr-2 h-4 w-4 animate-spin" />
-                  Processing…
-                </>
-              ) : (
-                <>
-                  <IconCash className="mr-2 h-4 w-4" />
-                  Confirm Refund
-                </>
-              )}
-            </Button>
-          )}
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
   );
 }

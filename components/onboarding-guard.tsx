@@ -2,9 +2,9 @@
 
 import { Spinner } from '@/components/ui/spinner';
 import { api } from '@/convex/_generated/api';
-import { useQuery, useAction } from 'convex/react';
+import { useQuery } from 'convex/react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { useEffect, useState, type ReactNode } from 'react';
+import { useEffect, useRef, type ReactNode } from 'react';
 
 interface OnboardingGuardProps {
   children: ReactNode;
@@ -14,50 +14,35 @@ export function OnboardingGuard({ children }: OnboardingGuardProps) {
   const router = useRouter();
   const searchParams = useSearchParams();
   const user = useQuery(api.users.query.me);
-  const completeOnboarding = useAction(api.users.action.completeOnboarding);
 
-  const [isCompletingOnboarding, setIsCompletingOnboarding] = useState(false);
-  const [hasCompletedFromStripe, setHasCompletedFromStripe] = useState(false);
+  // Use ref to track if we've started cleaning params (avoids setState in effect)
+  const isCleaningParamsRef = useRef(false);
 
-  const isOnboardingComplete = user?.metadata?.onboardingComplete === 'true';
+  const isOnboardingComplete = user?.metadata?.onboardingComplete === true;
 
-  // Check if user is returning from Stripe checkout
-  const isReturningFromStripe = searchParams.get('onboarding') === 'complete';
-  const localeParam = searchParams.get('locale');
+  // Check if user just completed onboarding (free trial flow)
+  // The onboarding page calls completeOnboarding() directly, then redirects with ?onboarding=complete
+  const justCompletedOnboarding = searchParams.get('onboarding') === 'complete';
 
-  // Complete onboarding when returning from Stripe checkout
+  // Clean up URL params ONLY after we confirm onboarding is complete in the database
+  // This prevents a race condition where the URL is cleaned before the query updates
   useEffect(() => {
-    const completeOnboardingFromStripe = async () => {
-      if (isReturningFromStripe && user && !isOnboardingComplete && !isCompletingOnboarding && !hasCompletedFromStripe) {
-        setIsCompletingOnboarding(true);
-        try {
-          console.log('[OnboardingGuard] Completing onboarding after Stripe checkout');
-          await completeOnboarding({
-            preferredLocale: (localeParam as 'en' | 'de' | 'fr' | 'it' | 'rm') || 'en',
-          });
-          setHasCompletedFromStripe(true);
-          // Remove the query params from the URL
-          router.replace(window.location.pathname);
-        } catch (error) {
-          console.error('[OnboardingGuard] Failed to complete onboarding:', error);
-        } finally {
-          setIsCompletingOnboarding(false);
-        }
-      }
-    };
+    if (justCompletedOnboarding && isOnboardingComplete && !isCleaningParamsRef.current) {
+      isCleaningParamsRef.current = true;
+      // Now safe to clean the URL - the database confirms onboarding is complete
+      router.replace(window.location.pathname);
+    }
+  }, [justCompletedOnboarding, isOnboardingComplete, router]);
 
-    completeOnboardingFromStripe();
-  }, [isReturningFromStripe, user, isOnboardingComplete, isCompletingOnboarding, hasCompletedFromStripe, completeOnboarding, localeParam, router]);
-
-  // Redirect to onboarding if not complete and not currently completing from Stripe
+  // Redirect to onboarding if not complete AND not just completing
   useEffect(() => {
-    if (user !== undefined && !isOnboardingComplete && !isReturningFromStripe && !isCompletingOnboarding) {
+    if (user !== undefined && !isOnboardingComplete && !justCompletedOnboarding) {
       router.replace('/onboarding');
     }
-  }, [user, isOnboardingComplete, isReturningFromStripe, isCompletingOnboarding, router]);
+  }, [user, isOnboardingComplete, justCompletedOnboarding, router]);
 
   // Loading state
-  if (user === undefined || isCompletingOnboarding) {
+  if (user === undefined) {
     return (
       <div className="flex min-h-screen items-center justify-center">
         <Spinner className="h-8 w-8" />
@@ -65,8 +50,8 @@ export function OnboardingGuard({ children }: OnboardingGuardProps) {
     );
   }
 
-  // User not onboarded and not returning from Stripe - show loading while redirecting
-  if (!isOnboardingComplete && !isReturningFromStripe) {
+  // User not onboarded and not just completing - show loading while redirecting
+  if (!isOnboardingComplete && !justCompletedOnboarding) {
     return (
       <div className="flex min-h-screen items-center justify-center">
         <Spinner className="h-8 w-8" />
@@ -74,7 +59,6 @@ export function OnboardingGuard({ children }: OnboardingGuardProps) {
     );
   }
 
-  // User is onboarded (or we just completed it), render children
+  // User is onboarded (or just completed), render children
   return <>{children}</>;
 }
-

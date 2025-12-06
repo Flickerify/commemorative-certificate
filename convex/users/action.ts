@@ -1,11 +1,11 @@
 import { v } from 'convex/values';
 import { ConvexError } from 'convex/values';
 import { WorkOS } from '@workos-inc/node';
-import { protectedAction, protectedQuery } from '../functions';
+import { protectedAction } from '../functions';
 import { languageValidator, Metadata } from '../schema';
 import { internal } from '../_generated/api';
 // Import validators and types from internal query (single source of truth)
-import { ownedOrgInfoValidator, membershipInfoValidator, type CanDeleteAccountCheckResult } from './internal/query';
+import { type CanDeleteAccountCheckResult } from './internal/query';
 
 export const completeOnboarding = protectedAction({
   args: {
@@ -14,28 +14,17 @@ export const completeOnboarding = protectedAction({
   async handler(ctx, args) {
     // Build metadata
     const metadata: Metadata = {
-      onboardingComplete: 'true',
+      onboardingComplete: true,
     };
 
     if (args.preferredLocale) {
       metadata.preferredLocale = args.preferredLocale;
     }
 
-    // 1. Update Convex immediately - this adds the version timestamp
-    const result = await ctx.runMutation(internal.users.internal.mutation.updateMetadata, {
+    // Update Convex - metadata is stored locally only (not synced to WorkOS)
+    await ctx.runMutation(internal.users.internal.mutation.updateMetadata, {
       userId: ctx.user._id,
       metadata,
-    });
-
-    // 2. Sync to WorkOS with the same version timestamp
-    const metadataWithVersion: Metadata = {
-      ...metadata,
-      _metadataVersion: result.version,
-    };
-
-    await ctx.runAction(internal.workos.internal.action.updateUserMetadata, {
-      workosUserId: ctx.user.externalId,
-      metadata: metadataWithVersion,
     });
 
     return { success: true };
@@ -44,8 +33,7 @@ export const completeOnboarding = protectedAction({
 
 /**
  * Update user preferences (theme, language, notifications, etc.)
- * Syncs to both Convex and WorkOS for persistence.
- * Uses version timestamps to prevent webhook race conditions.
+ * Metadata is stored locally in Convex only (not synced to WorkOS).
  */
 export const updatePreferences = protectedAction({
   args: {
@@ -68,32 +56,20 @@ export const updatePreferences = protectedAction({
     }
 
     if (args.emailNotifications !== undefined) {
-      metadata.emailNotifications = args.emailNotifications ? 'true' : 'false';
+      metadata.emailNotifications = args.emailNotifications ? true : false;
     }
 
     if (args.marketingEmails !== undefined) {
-      metadata.marketingEmails = args.marketingEmails ? 'true' : 'false';
+      metadata.marketingEmails = args.marketingEmails ? true : false;
     }
 
-    // 1. Update Convex immediately - this adds the version timestamp
-    const result = await ctx.runMutation(internal.users.internal.mutation.updateMetadata, {
+    // Update Convex - metadata is stored locally only (not synced to WorkOS)
+    await ctx.runMutation(internal.users.internal.mutation.updateMetadata, {
       userId: ctx.user._id,
       metadata,
     });
 
-    // 2. Sync to WorkOS with the same version timestamp
-    // This ensures webhook won't overwrite newer local changes
-    const metadataWithVersion: Metadata = {
-      ...metadata,
-      _metadataVersion: result.version,
-    };
-
-    await ctx.runAction(internal.workos.internal.action.updateUserMetadata, {
-      workosUserId: ctx.user.externalId,
-      metadata: metadataWithVersion,
-    });
-
-    return { success: true, metadata: metadataWithVersion };
+    return { success: true, metadata };
   },
 });
 

@@ -3,9 +3,10 @@
 import { ConvexError, v } from 'convex/values';
 import { protectedAction } from '../functions';
 import { WorkOS } from '@workos-inc/node';
-import { stripe } from '../billing/stripe';
+import { stripe, FREE_TRIAL_DAYS, getTierFromPriceId } from '../billing/stripe';
 import { internal } from '../_generated/api';
 import type { Id } from '../_generated/dataModel';
+import { TIER_SEAT_LIMITS } from '../schema';
 
 import type { AuditAction, AuditCategory, AuditStatus } from '../schema';
 import type { FunctionReference } from 'convex/server';
@@ -55,8 +56,7 @@ async function logAuditFromAction(
 
 /**
  * Create a new organization in WorkOS with Stripe billing integration.
- * Organizations require a paid subscription (Personal, Pro, or Enterprise).
- * All plans come with a 30-day money-back guarantee.
+ * Organizations start with a free trial (no credit card required).
  * Following the WorkOS Stripe Connect pattern:
  * https://workos.com/docs/authkit/add-ons/stripe/connect-to-stripe
  *
@@ -68,15 +68,15 @@ async function logAuditFromAction(
  * 5. Store the Stripe customer binding in Convex
  * 6. Add the current user as owner in WorkOS
  * 7. Optimistically insert membership into Convex
- * 8. Create Stripe checkout session for subscription
+ * 8. Create Stripe subscription with free trial (no payment required)
  *
  * Note: Tier is NOT stored in WorkOS metadata. It comes from organizationSubscriptions table.
  *
  * @param name - Organization name
  * @param priceId - Stripe price ID to subscribe to
  * @param tier - Subscription tier (personal/pro/enterprise)
- * @param successUrl - Redirect URL after successful checkout
- * @param cancelUrl - Redirect URL if checkout cancelled
+ * @param successUrl - Redirect URL after successful trial start (not Stripe checkout)
+ * @param cancelUrl - Redirect URL if creation fails
  */
 export const create = protectedAction({
   args: {
@@ -86,17 +86,14 @@ export const create = protectedAction({
     successUrl: v.string(),
     cancelUrl: v.string(),
   },
-  async handler(ctx, { name, priceId, tier, successUrl, cancelUrl }) {
+  async handler(ctx, { name, priceId, tier, successUrl }) {
     const workos = new WorkOS(process.env.WORKOS_API_KEY);
 
-    // 1. Create organization in WorkOS with tier metadata
+    // 1. Create organization in WorkOS (metadata is stored locally in Convex only)
     const organization = await workos.organizations.createOrganization({
       name,
-      metadata: {
-        tier,
-      },
     });
-    console.log(`[WorkOS] Created organization ${organization.id} (${name}) with tier: ${tier}`);
+    console.log(`[WorkOS] Created organization ${organization.id} (${name})`);
 
     // 2. Optimistically insert organization into Convex with tier metadata
     // This allows the organization switcher to work immediately
@@ -157,42 +154,64 @@ export const create = protectedAction({
     });
     console.log(`[Convex] Optimistically inserted membership for user ${ctx.user.externalId}`);
 
-    // 8. Create Stripe checkout session for subscription
-    // All plans require payment upfront with a 30-day money-back guarantee
-    const checkout = await stripe.checkout.sessions.create({
+    // 8. Create Stripe subscription with free trial (no payment required)
+    // The subscription will be automatically canceled if no payment method is added
+    const subscription = await stripe.subscriptions.create({
       customer: stripeCustomer.id,
-      mode: 'subscription',
-      line_items: [
-        {
-          price: priceId,
-          quantity: 1,
-        },
-      ],
-      success_url: successUrl,
-      cancel_url: cancelUrl,
-      subscription_data: {
-        metadata: {
-          workosOrganizationId: organization.id,
+      items: [{ price: priceId }],
+      trial_period_days: FREE_TRIAL_DAYS,
+      payment_settings: {
+        save_default_payment_method: 'on_subscription',
+      },
+      trial_settings: {
+        end_behavior: {
+          missing_payment_method: 'pause', // Pause if no payment method at trial end
         },
       },
       metadata: {
         workosOrganizationId: organization.id,
-        convexOrganizationId: convexOrgId,
+        organizationId: convexOrgId,
+        tier: getTierFromPriceId(priceId),
       },
-      // Checkout session expires after 24 hours by default
-      expires_at: Math.floor(Date.now() / 1000) + 60 * 60 * 24, // 24 hours
+      // Expand price data to access recurring.interval
+      expand: ['items.data.price'],
     });
 
-    console.log(`[Stripe] Created checkout session ${checkout.id} for organization ${organization.name}`);
+    console.log(`[Stripe] Created trial subscription ${subscription.id} for organization ${organization.name}`);
 
-    // Store pending checkout state so we can track/recover abandoned checkouts
-    await ctx.runMutation(internal.billing.internal.mutation.createPendingSubscription, {
+    const trialEndsAt = subscription.trial_end
+      ? subscription.trial_end * 1000
+      : Date.now() + FREE_TRIAL_DAYS * 24 * 60 * 60 * 1000;
+    const trialStartedAt = Date.now();
+    const derivedTier = getTierFromPriceId(priceId);
+    const seatLimit = TIER_SEAT_LIMITS[derivedTier];
+
+    // Extract billing interval from subscription item's price
+    const subscriptionItem = subscription.items.data[0];
+    const price = subscriptionItem.price;
+    const billingInterval = (price.recurring?.interval ?? 'month') as 'month' | 'year';
+
+    // Store subscription in Convex (with trial info)
+    const now = Date.now();
+    await ctx.runMutation(internal.billing.internal.mutation.upsertSubscriptionWithTrial, {
       organizationId: convexOrgId,
       stripeCustomerId: stripeCustomer.id,
-      checkoutSessionId: checkout.id,
-      priceId,
+      stripeSubscriptionId: subscription.id,
+      stripePriceId: priceId,
+      tier: derivedTier,
+      status: 'trialing',
+      billingInterval,
+      currentPeriodStart: subscriptionItem.current_period_start * 1000,
+      currentPeriodEnd: subscriptionItem.current_period_end * 1000,
+      cancelAtPeriodEnd: false,
+      seatLimit,
+      trialStartedAt,
+      trialEndsAt,
+      hasUsedTrial: true,
+      createdAt: now,
+      updatedAt: now,
     });
-    console.log(`[Convex] Stored pending checkout for organization ${convexOrgId}`);
+    console.log(`[Convex] Stored trial subscription for organization ${convexOrgId}`);
 
     // Log audit event for organization creation
     const actorName = [ctx.user.firstName, ctx.user.lastName].filter(Boolean).join(' ') || undefined;
@@ -209,8 +228,8 @@ export const create = protectedAction({
       targetType: 'organization',
       targetId: organization.id,
       targetName: name,
-      description: `${actorName || ctx.user.email} created organization "${name}"`,
-      metadata: { tier, workosOrganizationId: organization.id },
+      description: `${actorName || ctx.user.email} created organization "${name}" with ${FREE_TRIAL_DAYS}-day free trial`,
+      metadata: { tier, workosOrganizationId: organization.id, trialEndsAt },
     });
 
     return {
@@ -218,8 +237,10 @@ export const create = protectedAction({
       convexOrganizationId: convexOrgId,
       name: organization.name,
       stripeCustomerId: stripeCustomer.id,
-      checkoutSessionId: checkout.id,
-      checkoutUrl: checkout.url,
+      subscriptionId: subscription.id,
+      trialEndsAt,
+      // Redirect to success URL directly (no checkout needed)
+      redirectUrl: successUrl,
     };
   },
 });

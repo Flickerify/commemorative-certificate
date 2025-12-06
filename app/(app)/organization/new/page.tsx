@@ -131,16 +131,9 @@ export default function NewOrganizationPage() {
       await switchToOrganization(result.workosOrganizationId);
       console.log(`[Auth] Switched to new organization: ${result.workosOrganizationId}`);
 
-      // Redirect to Stripe checkout for payment
-      // All plans require payment with a 30-day money-back guarantee
-      if (result.checkoutUrl) {
-        console.log(`[Auth] Redirecting to Stripe checkout for organization: ${result.workosOrganizationId}`);
-        window.location.href = result.checkoutUrl;
-      } else {
-        // Fallback - should not happen
-        console.error(`[Auth] No checkout URL returned`);
-        window.location.href = '/administration/billing?success=true';
-      }
+      // Redirect to the app - trial starts immediately (no checkout required)
+      console.log(`[Auth] Free trial started for organization: ${result.workosOrganizationId}`);
+      window.location.href = result.redirectUrl || '/administration/billing?trial=true';
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to create organization');
       setIsLoading(false);
@@ -270,11 +263,11 @@ export default function NewOrganizationPage() {
           </div>
         ) : (
           <div className="space-y-8">
-            {/* Money-back guarantee banner */}
+            {/* Free trial banner */}
             <div className="flex items-center justify-center gap-2 text-sm text-muted-foreground">
               <Shield className="h-4 w-4 text-emerald-500" />
-              <span>All plans include a 30-day money-back guarantee</span>
-              </div>
+              <span>All plans include a 14-day free trial — no credit card required</span>
+            </div>
 
             {/* Billing toggle */}
             <div className="flex items-center justify-center gap-3">
@@ -375,7 +368,7 @@ export default function NewOrganizationPage() {
                 ) : (
                   <>
                     <Building2 className="h-4 w-4" />
-                    Continue to Payment
+                    Start Free Trial
                   </>
                 )}
               </Button>

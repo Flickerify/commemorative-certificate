@@ -108,10 +108,10 @@ export function PricingTable({
 
   return (
     <div className="space-y-8">
-      {/* Money-back guarantee notice */}
+      {/* Free trial notice */}
       <div className="flex items-center justify-center gap-2 text-sm text-muted-foreground">
         <IconCheck className="h-4 w-4 text-emerald-500" />
-        <span>All plans include a 30-day money-back guarantee</span>
+        <span>All plans include a 14-day free trial — no credit card required</span>
       </div>
 
       {/* Billing toggle */}

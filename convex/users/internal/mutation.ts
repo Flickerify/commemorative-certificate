@@ -2,115 +2,47 @@ import { v } from 'convex/values';
 import { internalMutation } from '../../functions';
 import { userWithoutRole, Metadata, metadataValidator } from '../../schema';
 
-/**
- * Pre-provision a user from WorkOS registration action data.
- * Called asynchronously during the registration flow (before the user exists in WorkOS).
- * Creates a pending user record that will be completed when the user.created webhook arrives.
- *
- * Uses email as the temporary identifier since WorkOS user ID doesn't exist yet.
- */
-export const provisionFromRegistration = internalMutation({
-  args: {
-    email: v.string(),
-    firstName: v.optional(v.string()),
-    lastName: v.optional(v.string()),
-  },
-  returns: v.union(v.id('users'), v.null()),
-  async handler(ctx, args) {
-    // Check if user already exists by email (prevents duplicates)
-    const existingByEmail = await ctx.db
-      .query('users')
-      .withIndex('by_email', (q) => q.eq('email', args.email))
-      .first();
-
-    if (existingByEmail) {
-      console.log(`[Registration] User already exists for email: ${args.email}`);
-      return existingByEmail._id;
-    }
-
-    // Create pending user record
-    // Note: externalId is set to a placeholder - will be updated by user.created webhook
-    const now = Date.now();
-    const userId = await ctx.db.insert('users', {
-      externalId: `pending:${args.email}`, // Placeholder until webhook arrives
-      email: args.email,
-      firstName: args.firstName ?? null,
-      lastName: args.lastName ?? null,
-      emailVerified: false,
-      profilePictureUrl: null,
-      role: 'user',
-      metadata: {
-        onboardingComplete: 'false',
-      },
-      updatedAt: now,
-    });
-
-    console.log(`[Registration] Pre-provisioned user: ${userId} for email: ${args.email}`);
-    return userId;
-  },
-});
-
 export const upsertFromWorkos = internalMutation({
   args: userWithoutRole,
   async handler(ctx, args) {
     // First, try to find by external ID (normal case)
-    let user = await ctx.db
+    const user = await ctx.db
       .query('users')
       .withIndex('by_external_id', (q) => q.eq('externalId', args.externalId))
       .first();
 
-    // If not found by external ID, check for pre-provisioned user by email
-    // Pre-provisioned users have externalId = "pending:email"
-    if (!user && args.email) {
-      const pendingUser = await ctx.db
-        .query('users')
-        .withIndex('by_email', (q) => q.eq('email', args.email))
-        .first();
-
-      // Only match if this is a pending record (not a different user's record)
-      if (pendingUser && pendingUser.externalId.startsWith('pending:')) {
-        console.log(`[Webhook] Linking pre-provisioned user ${pendingUser._id} to WorkOS ID: ${args.externalId}`);
-        user = pendingUser;
-      }
-    }
+    // Extract only the fields we sync from WorkOS (excluding metadata which is local-only)
+    const workosFields = {
+      externalId: args.externalId,
+      email: args.email,
+      emailVerified: args.emailVerified,
+      firstName: args.firstName,
+      lastName: args.lastName,
+      profilePictureUrl: args.profilePictureUrl,
+      updatedAt: args.updatedAt,
+    };
 
     if (!user) {
-      // New user: set defaults for role, use metadata from WorkOS (or default onboardingComplete: 'false')
+      // New user: set defaults for role and metadata
+      // Note: args.metadata is ignored - metadata is stored locally only
       const defaultMetadata: Metadata = {
-        onboardingComplete: 'false',
-        ...args.metadata, // WorkOS metadata overrides defaults
+        onboardingComplete: false,
+        preferredLocale: 'en',
       };
       return await ctx.db.insert('users', {
-        ...args,
+        ...workosFields,
         role: 'user',
         metadata: defaultMetadata,
       });
     }
 
-    // Check if local metadata is newer than incoming webhook data
-    // We use _metadataVersion as a timestamp to prevent webhook overwrites
-    const localVersion = parseInt(user.metadata?._metadataVersion || '0', 10);
-    const incomingVersion = parseInt(args.metadata?._metadataVersion || '0', 10);
-
-    // If local version is newer, preserve local metadata (user-initiated changes)
-    // Otherwise, merge with incoming webhook data
-    let mergedMetadata: Metadata;
-    if (localVersion > incomingVersion) {
-      // Local is newer - keep local metadata, but update non-metadata fields
-      mergedMetadata = user.metadata || {};
-      console.log(`Skipping metadata update from webhook: local version ${localVersion} > incoming ${incomingVersion}`);
-    } else {
-      // Webhook is newer or same - merge with preference for incoming
-      mergedMetadata = {
-        ...user.metadata,
-        ...args.metadata,
-      };
-    }
-
+    // Existing user: preserve local metadata (not synced from WorkOS)
+    // Only update non-metadata fields from WorkOS webhook
     await ctx.db.patch(user._id, {
-      ...args,
+      ...workosFields,
       role: user.role,
-      metadata: mergedMetadata,
+      // Keep existing metadata - don't overwrite with WorkOS data
+      metadata: user.metadata,
     });
 
     return user._id;
@@ -128,12 +60,10 @@ export const updateMetadata = internalMutation({
       throw new Error(`User not found: ${userId}`);
     }
 
-    // Add version timestamp to prevent webhook overwrites
-    const version = Date.now().toString();
+    // Merge new metadata with existing (stored locally only, not synced to WorkOS)
     const mergedMetadata: Metadata = {
       ...user.metadata,
       ...metadata,
-      _metadataVersion: version,
     };
 
     await ctx.db.patch(userId, {
@@ -141,7 +71,7 @@ export const updateMetadata = internalMutation({
       updatedAt: Date.now(),
     });
 
-    return { success: true, version };
+    return { success: true };
   },
 });
 

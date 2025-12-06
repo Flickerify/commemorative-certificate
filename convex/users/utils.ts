@@ -1,11 +1,11 @@
-import { ConvexError } from "convex/values";
+import { ConvexError } from 'convex/values';
 
-import { QueryCtx } from "../_generated/server";
+import { QueryCtx } from '../_generated/server';
 
 export async function userByExternalId(ctx: QueryCtx, externalId: string) {
   return await ctx.db
-    .query("users")
-    .withIndex("by_external_id", (q) => q.eq("externalId", externalId))
+    .query('users')
+    .withIndex('by_external_id', (q) => q.eq('externalId', externalId))
     .first();
 }
 
@@ -19,6 +19,6 @@ export async function getCurrentUser(ctx: QueryCtx) {
 
 export async function getCurrentUserOrThrow(ctx: QueryCtx) {
   const userRecord = await getCurrentUser(ctx);
-  if (!userRecord) throw new ConvexError("Authentication required");
+  if (!userRecord) throw new ConvexError('Authentication required');
   return userRecord;
 }

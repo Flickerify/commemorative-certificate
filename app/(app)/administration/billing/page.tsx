@@ -34,6 +34,8 @@ import {
   IconCurrencyDollar,
   IconRotateClockwise,
   IconCalendar,
+  IconSparkles,
+  IconCreditCardPay,
 } from '@tabler/icons-react';
 import type { Id } from '@/convex/_generated/dataModel';
 import { cn } from '@/lib/utils';
@@ -352,6 +354,19 @@ function BillingPageContent() {
 
             {/* Usage Tab */}
             <TabsContent value="usage" className="space-y-6">
+              {/* Trial Status Panel - only show when trialing */}
+              {subscription &&
+                !subscription.isPersonalWorkspace &&
+                subscription.isTrialing &&
+                subscription.trialDaysRemaining !== undefined && (
+                  <TrialStatusPanel
+                    trialDaysRemaining={subscription.trialDaysRemaining}
+                    trialEndsAt={subscription.trialEndsAt}
+                    hasPaymentMethod={!!(subscription.paymentMethodBrand && subscription.paymentMethodLast4)}
+                    organizationId={currentOrg._id as Id<'organizations'>}
+                  />
+                )}
+
               <div className="rounded-xl border border-border bg-card p-6">
                 <h3 className="font-semibold mb-4">Usage This Period</h3>
 
@@ -861,6 +876,190 @@ function UsageCard({ title, current, limit, unit }: UsageCardProps) {
           <div className="h-full bg-emerald-500 rounded-full" style={{ width: '100%' }} />
         </div>
       )}
+    </div>
+  );
+}
+
+// ============================================================
+// TRIAL STATUS PANEL
+// ============================================================
+
+interface TrialStatusPanelProps {
+  trialDaysRemaining: number;
+  trialEndsAt?: number;
+  hasPaymentMethod: boolean;
+  organizationId: Id<'organizations'>;
+}
+
+function TrialStatusPanel({
+  trialDaysRemaining,
+  trialEndsAt,
+  hasPaymentMethod,
+  organizationId,
+}: TrialStatusPanelProps) {
+  const createBillingPortalSession = useAction(api.billing.action.createBillingPortalSession);
+  const [isLoading, setIsLoading] = useState(false);
+
+  // Determine urgency level based on days remaining
+  // Days 10-14 remaining (first 5 days of trial): Green/neutral - "Enjoy your trial"
+  // Days 5-9 remaining (days 6-9 of trial): Amber/warning - "Halfway through"
+  // Days 0-4 remaining (last 5 days): Red/urgent - "Add payment soon"
+  const getUrgencyLevel = (): 'enjoy' | 'warning' | 'urgent' => {
+    if (trialDaysRemaining >= 10) return 'enjoy';
+    if (trialDaysRemaining >= 5) return 'warning';
+    return 'urgent';
+  };
+
+  const urgency = getUrgencyLevel();
+
+  const handleAddPaymentMethod = async () => {
+    setIsLoading(true);
+    try {
+      const returnUrl = `${window.location.origin}/administration/billing`;
+      const { url } = await createBillingPortalSession({
+        organizationId,
+        returnUrl,
+      });
+      window.location.href = url;
+    } catch (error) {
+      console.error('Failed to open billing portal:', error);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // Background styles based on urgency
+  const getBackgroundStyles = () => {
+    switch (urgency) {
+      case 'enjoy':
+        return 'bg-emerald-500/5 border-emerald-500/20';
+      case 'warning':
+        return 'bg-amber-500/10 border-amber-500/30';
+      case 'urgent':
+        return 'bg-red-500/10 border-red-500/30';
+    }
+  };
+
+  // Icon and text color based on urgency
+  const getIconStyles = () => {
+    switch (urgency) {
+      case 'enjoy':
+        return 'text-emerald-500';
+      case 'warning':
+        return 'text-amber-500';
+      case 'urgent':
+        return 'text-red-500';
+    }
+  };
+
+  // Message based on urgency and payment status
+  const getMessage = () => {
+    if (hasPaymentMethod) {
+      return {
+        title: 'Trial Active',
+        description: `You have ${trialDaysRemaining} day${trialDaysRemaining === 1 ? '' : 's'} left in your trial. Your payment method is set up for automatic billing.`,
+      };
+    }
+
+    switch (urgency) {
+      case 'enjoy':
+        return {
+          title: 'Enjoy Your Free Trial! 🎉',
+          description: `You have ${trialDaysRemaining} day${trialDaysRemaining === 1 ? '' : 's'} to explore all features. Add a payment method anytime to ensure uninterrupted service.`,
+        };
+      case 'warning':
+        return {
+          title: 'Halfway Through Your Trial',
+          description: `Only ${trialDaysRemaining} day${trialDaysRemaining === 1 ? '' : 's'} remaining. Add a payment method now to avoid service disruption when your trial ends.`,
+        };
+      case 'urgent':
+        return {
+          title: 'Trial Ending Soon!',
+          description: `Your trial ends in ${trialDaysRemaining} day${trialDaysRemaining === 1 ? '' : 's'}${trialEndsAt ? ` (${new Date(trialEndsAt).toLocaleDateString()})` : ''}. Add a payment method now to keep your subscription active.`,
+        };
+    }
+  };
+
+  const { title, description } = getMessage();
+
+  return (
+    <div className={cn('rounded-xl border p-5 transition-colors', getBackgroundStyles())}>
+      <div className="flex items-start gap-4">
+        <div className={cn('mt-0.5', getIconStyles())}>
+          {urgency === 'enjoy' ? (
+            <IconSparkles className="h-6 w-6" />
+          ) : urgency === 'warning' ? (
+            <IconClock className="h-6 w-6" />
+          ) : (
+            <IconAlertCircle className="h-6 w-6" />
+          )}
+        </div>
+
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center justify-between gap-4 mb-1">
+            <h4 className="font-semibold">{title}</h4>
+            <Badge
+              variant="secondary"
+              className={cn(
+                'shrink-0',
+                urgency === 'enjoy' && 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400',
+                urgency === 'warning' && 'bg-amber-500/10 text-amber-600 dark:text-amber-400',
+                urgency === 'urgent' && 'bg-red-500/10 text-red-600 dark:text-red-400',
+              )}
+            >
+              {trialDaysRemaining} day{trialDaysRemaining === 1 ? '' : 's'} left
+            </Badge>
+          </div>
+
+          <p className="text-sm text-muted-foreground mb-4">{description}</p>
+
+          {!hasPaymentMethod && (
+            <Button
+              onClick={handleAddPaymentMethod}
+              disabled={isLoading}
+              size="sm"
+              variant={urgency === 'urgent' ? 'default' : 'outline'}
+              className={cn(
+                urgency === 'urgent' && 'bg-red-600 hover:bg-red-700 text-white',
+                urgency === 'warning' && 'border-amber-500/50 hover:bg-amber-500/10',
+              )}
+            >
+              {isLoading ? (
+                <IconRefresh className="h-4 w-4 mr-2 animate-spin" />
+              ) : (
+                <IconCreditCardPay className="h-4 w-4 mr-2" />
+              )}
+              Add Payment Method
+            </Button>
+          )}
+
+          {hasPaymentMethod && (
+            <div className="flex items-center gap-2 text-sm text-emerald-600 dark:text-emerald-400">
+              <IconCheck className="h-4 w-4" />
+              <span>Payment method configured</span>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Progress bar showing trial usage */}
+      <div className="mt-4 pt-4 border-t border-current/10">
+        <div className="flex items-center justify-between text-xs text-muted-foreground mb-2">
+          <span>Trial progress</span>
+          <span>{14 - trialDaysRemaining} of 14 days used</span>
+        </div>
+        <div className="h-1.5 rounded-full bg-current/10 overflow-hidden">
+          <div
+            className={cn(
+              'h-full rounded-full transition-all',
+              urgency === 'enjoy' && 'bg-emerald-500',
+              urgency === 'warning' && 'bg-amber-500',
+              urgency === 'urgent' && 'bg-red-500',
+            )}
+            style={{ width: `${((14 - trialDaysRemaining) / 14) * 100}%` }}
+          />
+        </div>
+      </div>
     </div>
   );
 }

@@ -28,10 +28,11 @@ export const STRIPE_PRICE_IDS = {
 } as const;
 
 /**
- * Money-back guarantee period (days).
- * All plans come with a 30-day money-back guarantee.
+ * Free trial period (days).
+ * All plans include a free trial without requiring a credit card.
+ * At the end of the trial, the subscription is canceled if no payment method is added.
  */
-export const MONEY_BACK_GUARANTEE_DAYS = 30;
+export const FREE_TRIAL_DAYS = 14;
 
 /**
  * Get tier from Stripe price ID.

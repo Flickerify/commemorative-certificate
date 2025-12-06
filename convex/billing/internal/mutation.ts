@@ -209,6 +209,7 @@ export const syncSubscriptionData = internalMutation({
         subscriptionId: v.string(),
         status: subscriptionStatusValidator,
         priceId: v.string(),
+        billingInterval: v.optional(v.union(v.literal('month'), v.literal('year'))),
         currentPeriodStart: v.number(),
         currentPeriodEnd: v.number(),
         cancelAtPeriodEnd: v.boolean(),
@@ -268,9 +269,12 @@ export const syncSubscriptionData = internalMutation({
       .withIndex('by_stripe_subscription', (q) => q.eq('stripeSubscriptionId', subscriptionId))
       .first();
 
-    // Determine tier and billing interval from price ID
+    // Determine tier and billing interval from price ID (use incoming billingInterval if available)
     const tier = getTierFromPriceId(priceId);
-    const billingInterval = getBillingIntervalFromPriceId(priceId);
+    const billingInterval =
+      'billingInterval' in args.subscription && args.subscription.billingInterval
+        ? args.subscription.billingInterval
+        : getBillingIntervalFromPriceId(priceId);
     const seatLimit = TIER_SEAT_LIMITS[tier];
 
     // TypeScript: We know all these properties exist because we returned early if status is 'none'
@@ -288,10 +292,11 @@ export const syncSubscriptionData = internalMutation({
       scheduledBillingInterval = getBillingIntervalFromPriceId(subscription.scheduledPriceId);
     }
 
-    // Track firstSubscriptionStart - only set once, never reset
-    // This is crucial for the 30-day money-back guarantee
-    const firstSubscriptionStart =
-      existingSubscription?.firstSubscriptionStart ?? subscription.currentPeriodStart * 1000;
+    // Track trial info - only set once, never reset
+    // hasUsedTrial prevents users from getting multiple free trials
+    const trialStartedAt = existingSubscription?.trialStartedAt;
+    const trialEndsAt = existingSubscription?.trialEndsAt;
+    const hasUsedTrial = existingSubscription?.hasUsedTrial;
 
     const subscriptionData = {
       organizationId,
@@ -316,8 +321,10 @@ export const syncSubscriptionData = internalMutation({
       scheduledBillingInterval,
       scheduledPriceId: subscription.scheduledPriceId,
       stripeScheduleId: subscription.stripeScheduleId,
-      // First subscription start (never resets - for 30-day guarantee)
-      firstSubscriptionStart,
+      // Trial tracking (never resets - prevents multiple free trials)
+      trialStartedAt,
+      trialEndsAt,
+      hasUsedTrial,
       updatedAt: now,
     };
 
@@ -428,12 +435,91 @@ export const syncSubscriptionData = internalMutation({
 });
 
 /**
- * Mark that a user has used their one-time immediate downgrade during the guarantee period.
- * This prevents abuse where users upgrade/downgrade repeatedly to game Stripe fees.
+ * Create or update a subscription record with trial information.
+ * Used when creating organizations with free trials.
  */
-export const markDowngradeDuringGuarantee = internalMutation({
+export const upsertSubscriptionWithTrial = internalMutation({
   args: {
     organizationId: v.id('organizations'),
+    stripeCustomerId: v.string(),
+    stripeSubscriptionId: v.string(),
+    stripePriceId: v.string(),
+    tier: v.union(v.literal('personal'), v.literal('pro'), v.literal('enterprise')),
+    status: subscriptionStatusValidator,
+    billingInterval: v.union(v.literal('month'), v.literal('year')),
+    currentPeriodStart: v.number(),
+    currentPeriodEnd: v.number(),
+    cancelAtPeriodEnd: v.boolean(),
+    seatLimit: v.number(),
+    trialStartedAt: v.number(),
+    trialEndsAt: v.number(),
+    hasUsedTrial: v.boolean(),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  },
+  returns: v.id('organizationSubscriptions'),
+  handler: async (ctx, args) => {
+    // Check if a subscription record already exists
+    const existing = await ctx.db
+      .query('organizationSubscriptions')
+      .withIndex('by_organization', (q) => q.eq('organizationId', args.organizationId))
+      .first();
+
+    if (existing) {
+      // Update the existing record
+      await ctx.db.patch(existing._id, {
+        stripeCustomerId: args.stripeCustomerId,
+        stripeSubscriptionId: args.stripeSubscriptionId,
+        stripePriceId: args.stripePriceId,
+        tier: args.tier,
+        status: args.status,
+        billingInterval: args.billingInterval,
+        currentPeriodStart: args.currentPeriodStart,
+        currentPeriodEnd: args.currentPeriodEnd,
+        cancelAtPeriodEnd: args.cancelAtPeriodEnd,
+        seatLimit: args.seatLimit,
+        trialStartedAt: args.trialStartedAt,
+        trialEndsAt: args.trialEndsAt,
+        hasUsedTrial: args.hasUsedTrial,
+        // Clear pending checkout state
+        pendingCheckoutSessionId: undefined,
+        pendingPriceId: undefined,
+        updatedAt: args.updatedAt,
+      });
+      return existing._id;
+    }
+
+    // Create a new subscription record
+    return await ctx.db.insert('organizationSubscriptions', {
+      organizationId: args.organizationId,
+      stripeCustomerId: args.stripeCustomerId,
+      stripeSubscriptionId: args.stripeSubscriptionId,
+      stripePriceId: args.stripePriceId,
+      tier: args.tier,
+      status: args.status,
+      billingInterval: args.billingInterval,
+      currentPeriodStart: args.currentPeriodStart,
+      currentPeriodEnd: args.currentPeriodEnd,
+      cancelAtPeriodEnd: args.cancelAtPeriodEnd,
+      seatLimit: args.seatLimit,
+      trialStartedAt: args.trialStartedAt,
+      trialEndsAt: args.trialEndsAt,
+      hasUsedTrial: args.hasUsedTrial,
+      createdAt: args.createdAt,
+      updatedAt: args.updatedAt,
+    });
+  },
+});
+
+/**
+ * Mark that an organization has used their free trial.
+ * This prevents users from getting multiple free trials.
+ */
+export const markTrialUsed = internalMutation({
+  args: {
+    organizationId: v.id('organizations'),
+    trialStartedAt: v.number(),
+    trialEndsAt: v.number(),
   },
   returns: v.null(),
   handler: async (ctx, args) => {
@@ -444,12 +530,12 @@ export const markDowngradeDuringGuarantee = internalMutation({
 
     if (subscription) {
       await ctx.db.patch(subscription._id, {
-        hasDowngradedDuringGuarantee: true,
+        hasUsedTrial: true,
+        trialStartedAt: args.trialStartedAt,
+        trialEndsAt: args.trialEndsAt,
         updatedAt: Date.now(),
       });
-      console.log(
-        `[Billing] Marked organization ${args.organizationId} as having used their guarantee downgrade`,
-      );
+      console.log(`[Billing] Marked organization ${args.organizationId} as having used their free trial`);
     }
 
     return null;

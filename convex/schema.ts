@@ -66,8 +66,8 @@ export const TIER_SEAT_LIMITS: Record<SubscriptionTier, number> = {
   enterprise: -1, // unlimited
 };
 
-// Money-back guarantee period (days)
-export const MONEY_BACK_GUARANTEE_DAYS = 30;
+// Free trial period (days) - no credit card required
+export const FREE_TRIAL_DAYS = 14;
 
 // Stripe customer - links organizations to Stripe
 export const stripeCustomers = defineTable({
@@ -101,11 +101,10 @@ export const organizationSubscriptions = defineTable({
   scheduledBillingInterval: v.optional(billingIntervalValidator),
   scheduledPriceId: v.optional(v.string()),
   stripeScheduleId: v.optional(v.string()), // Stripe subscription schedule ID
-  // First subscription start date (for 30-day money-back guarantee - never resets)
-  firstSubscriptionStart: v.optional(v.number()),
-  // Track if user has already used their one-time downgrade during the 30-day guarantee
-  // Prevents abuse of immediate refunds (Stripe fees are not returned on refunds)
-  hasDowngradedDuringGuarantee: v.optional(v.boolean()),
+  // Trial tracking
+  trialStartedAt: v.optional(v.number()), // When the trial started (ms)
+  trialEndsAt: v.optional(v.number()), // When the trial ends (ms)
+  hasUsedTrial: v.optional(v.boolean()), // Track if user has used their one-time trial
   // Timestamps
   createdAt: v.number(),
   updatedAt: v.number(),
@@ -115,7 +114,7 @@ export const organizationSubscriptions = defineTable({
 // USERS & ORGANIZATIONS
 // ============================================================
 
-export const metadataValidator = v.record(v.string(), v.string());
+export const metadataValidator = v.record(v.string(), v.union(v.string(), v.boolean(), v.number()));
 
 export const users = defineTable({
   email: v.string(),

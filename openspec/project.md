@@ -26,7 +26,7 @@ The platform provides:
 - **Public-facing pages** with subdomain routing (`company.flickerify.com`)
 - **Multi-tenancy** via WorkOS organizations with usage limits per tier
 - **Enterprise audit logs** with configurable retention policies
-- **30-day money-back guarantee** with scheduled plan changes
+- **14-day free trial** without requiring a credit card
 
 ## Tech Stack
 
@@ -382,7 +382,7 @@ Targets represent what to check against (e.g., OBD devices with features):
 - Users are created/updated via WorkOS webhooks
 - Each user has a `role` (admin/user) and `externalId` (WorkOS ID)
 - **Metadata** stored in `metadata: Record<string, string>`:
-  - `onboardingComplete` – `'true'` or `'false'` (string)
+  - `onboardingComplete` – `true` or `false` (string)
   - `preferredLocale` – Language code (`de`, `fr`, `it`, `rm`, `en`)
   - Any other custom string fields from WorkOS
 - WorkOS is the source of truth for metadata; updates go to WorkOS first, then webhook syncs to Convex
@@ -390,7 +390,7 @@ Targets represent what to check against (e.g., OBD devices with features):
 
 ### Onboarding Flow
 
-- New users have `metadata.onboardingComplete = 'false'`
+- New users have `metadata.onboardingComplete = false`
 - `OnboardingGuard` component wraps authenticated routes
 - Non-onboarded users are redirected to `/onboarding`
 - Onboarding wizard allows language selection
@@ -412,10 +412,11 @@ Targets represent what to check against (e.g., OBD devices with features):
 - Personal tier is the free base tier (no Stripe subscription required)
 - Stripe is the source of truth for paid billing; webhooks sync state to Convex
 - Subscription statuses: `active`, `canceled`, `incomplete`, `incomplete_expired`, `past_due`, `paused`, `trialing`, `unpaid`, `none`
-- **30-day money-back guarantee** for new subscriptions:
-  - `firstSubscriptionStart` tracks the initial subscription date (never resets)
-  - `hasDowngradedDuringGuarantee` prevents abuse of immediate refunds
-  - Stripe fees are not returned on refunds
+- **14-day free trial** for new subscriptions:
+  - No credit card required to start trial
+  - `trialStartedAt` and `trialEndsAt` track trial period
+  - `hasUsedTrial` prevents multiple free trials per organization
+  - Subscription auto-cancels if no payment method added by trial end
 - **Scheduled plan changes** for downgrades:
   - `scheduledTier`, `scheduledBillingInterval`, `scheduledPriceId` track pending changes
   - `stripeScheduleId` links to Stripe subscription schedule
@@ -532,7 +533,7 @@ _Note: Source, target, and rule limits are planned features._
 - **Webhooks** – Subscription lifecycle events (checkout, subscription updates, payments)
 - **Subscription Schedules** – For scheduled plan changes (downgrades at period end)
 - **Tiers** – `personal` (free), `pro` (3 seats), `enterprise` (unlimited)
-- **Money-back guarantee** – 30-day guarantee for new subscriptions
+- **Free trial** – 14-day trial without credit card requirement
 - **Billing intervals** – Monthly and yearly options
 
 ### Stripe Webhooks
@@ -622,7 +623,7 @@ STRIPE_PRICE_ENTERPRISE_YEARLY=
 **Billing (synced from Stripe)**:
 
 - **stripeCustomers** – `organizationId`, `stripeCustomerId`, `createdAt`
-- **organizationSubscriptions** – `organizationId`, `stripeCustomerId`, `stripeSubscriptionId?`, `stripePriceId?`, `tier`, `status`, `billingInterval?`, `currentPeriodStart?`, `currentPeriodEnd?`, `cancelAtPeriodEnd`, `cancelAt?`, `seatLimit`, `paymentMethodBrand?`, `paymentMethodLast4?`, `pendingCheckoutSessionId?`, `pendingPriceId?`, `scheduledTier?`, `scheduledBillingInterval?`, `scheduledPriceId?`, `stripeScheduleId?`, `firstSubscriptionStart?`, `hasDowngradedDuringGuarantee?`, `createdAt`, `updatedAt`
+- **organizationSubscriptions** – `organizationId`, `stripeCustomerId`, `stripeSubscriptionId?`, `stripePriceId?`, `tier`, `status`, `billingInterval?`, `currentPeriodStart?`, `currentPeriodEnd?`, `cancelAtPeriodEnd`, `cancelAt?`, `seatLimit`, `paymentMethodBrand?`, `paymentMethodLast4?`, `pendingCheckoutSessionId?`, `pendingPriceId?`, `scheduledTier?`, `scheduledBillingInterval?`, `scheduledPriceId?`, `stripeScheduleId?`, `trialStartedAt?`, `trialEndsAt?`, `hasUsedTrial?`, `createdAt`, `updatedAt`
 - **stripeWebhookEvents** – `eventId`, `eventType`, `customerId?`, `processedAt` (idempotency)
 
 **WorkOS Events API**:

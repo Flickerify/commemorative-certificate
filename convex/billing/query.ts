@@ -5,18 +5,29 @@ import { Id, Doc } from '../_generated/dataModel';
 
 /**
  * Helper to find active subscription using the by_organization_and_status index.
+ * An "active" subscription includes both 'active' and 'trialing' statuses.
  */
 async function findActiveSubscription(
   db: DatabaseReader,
   organizationId: Id<'organizations'>,
 ): Promise<Doc<'organizationSubscriptions'> | null> {
-  // Check for 'active' status
+  // Check for 'active' status first
   const activeSubscription = await db
     .query('organizationSubscriptions')
     .withIndex('by_organization_and_status', (q) => q.eq('organizationId', organizationId).eq('status', 'active'))
     .first();
 
-  return activeSubscription;
+  if (activeSubscription) {
+    return activeSubscription;
+  }
+
+  // Also check for 'trialing' status - a trial is an active subscription
+  const trialingSubscription = await db
+    .query('organizationSubscriptions')
+    .withIndex('by_organization_and_status', (q) => q.eq('organizationId', organizationId).eq('status', 'trialing'))
+    .first();
+
+  return trialingSubscription;
 }
 
 /**
@@ -118,16 +129,18 @@ export const getStripeCustomer = internalQuery({
 });
 
 /**
- * Check if user has already used their one-time immediate downgrade during guarantee period.
- * This prevents abuse of Stripe fees (which aren't returned on refunds).
+ * Check if organization has already used their free trial.
+ * This prevents users from getting multiple free trials.
  */
-export const getSubscriptionDowngradeStatus = internalQuery({
+export const getTrialStatus = internalQuery({
   args: {
     organizationId: v.id('organizations'),
   },
   returns: v.union(
     v.object({
-      hasDowngradedDuringGuarantee: v.boolean(),
+      hasUsedTrial: v.boolean(),
+      trialStartedAt: v.optional(v.number()),
+      trialEndsAt: v.optional(v.number()),
     }),
     v.null(),
   ),
@@ -140,7 +153,9 @@ export const getSubscriptionDowngradeStatus = internalQuery({
     if (!subscription) return null;
 
     return {
-      hasDowngradedDuringGuarantee: subscription.hasDowngradedDuringGuarantee ?? false,
+      hasUsedTrial: subscription.hasUsedTrial ?? false,
+      trialStartedAt: subscription.trialStartedAt,
+      trialEndsAt: subscription.trialEndsAt,
     };
   },
 });
@@ -179,9 +194,10 @@ export const getOrganizationSubscription = protectedQuery({
       hasActiveSubscription: v.boolean(),
       isPersonalWorkspace: v.literal(false),
       isPendingSetup: v.literal(false),
-      // Money-back guarantee info (based on FIRST subscription start, never resets)
-      isWithinGuaranteePeriod: v.boolean(),
-      guaranteeDaysRemaining: v.optional(v.number()),
+      // Trial info
+      isTrialing: v.boolean(),
+      trialDaysRemaining: v.optional(v.number()),
+      trialEndsAt: v.optional(v.number()),
       // Scheduled plan change (for downgrades at period end)
       scheduledTier: v.optional(v.union(v.literal('personal'), v.literal('pro'), v.literal('enterprise'))),
       scheduledBillingInterval: v.optional(v.union(v.literal('month'), v.literal('year'))),
@@ -216,19 +232,12 @@ export const getOrganizationSubscription = protectedQuery({
     const activeSubscription = await findActiveSubscription(ctx.db, args.organizationId);
 
     if (activeSubscription) {
-      // Calculate money-back guarantee period (30 days from FIRST subscription start - never resets)
-      const GUARANTEE_DAYS = 30;
+      // Calculate trial info
       const now = Date.now();
-      // Use firstSubscriptionStart if available, otherwise fall back to currentPeriodStart or createdAt
-      const subscriptionStart =
-        activeSubscription.firstSubscriptionStart ??
-        activeSubscription.currentPeriodStart ??
-        activeSubscription.createdAt;
-      const guaranteeEndMs = subscriptionStart + GUARANTEE_DAYS * 24 * 60 * 60 * 1000;
-      const isWithinGuaranteePeriod = now < guaranteeEndMs;
-      const guaranteeDaysRemaining = isWithinGuaranteePeriod
-        ? Math.max(0, Math.ceil((guaranteeEndMs - now) / (1000 * 60 * 60 * 24)))
-        : undefined;
+      const isTrialing = activeSubscription.status === 'trialing';
+      const trialEndsAt = activeSubscription.trialEndsAt;
+      const trialDaysRemaining =
+        isTrialing && trialEndsAt ? Math.max(0, Math.ceil((trialEndsAt - now) / (1000 * 60 * 60 * 24))) : undefined;
 
       // Check for scheduled plan changes
       const hasScheduledChange = !!(activeSubscription.scheduledTier || activeSubscription.scheduledBillingInterval);
@@ -248,8 +257,9 @@ export const getOrganizationSubscription = protectedQuery({
         paymentMethodLast4: activeSubscription.paymentMethodLast4,
         features: getFeaturesForTier(activeSubscription.tier),
         hasActiveSubscription: true as const,
-        isWithinGuaranteePeriod,
-        guaranteeDaysRemaining,
+        isTrialing,
+        trialDaysRemaining,
+        trialEndsAt,
         // Scheduled plan change info
         scheduledTier: activeSubscription.scheduledTier as 'personal' | 'pro' | 'enterprise' | undefined,
         scheduledBillingInterval: activeSubscription.scheduledBillingInterval as 'month' | 'year' | undefined,
@@ -310,7 +320,7 @@ export const getOrganizationSubscription = protectedQuery({
       paymentMethodLast4: mostRecentSubscription.paymentMethodLast4,
       features: getFeaturesForTier(mostRecentSubscription.tier),
       hasActiveSubscription: false as const,
-      isWithinGuaranteePeriod: false,
+      isTrialing: false,
       hasScheduledChange: false,
     };
   },
