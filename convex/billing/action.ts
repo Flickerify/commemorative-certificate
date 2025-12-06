@@ -294,17 +294,24 @@ export const updateSubscription = action({
       throw new Error('No billing account found');
     }
 
-    // 2. Get current active subscription
+    // 2. Get current active or trialing subscription
+    // Note: We need to check for both 'active' AND 'trialing' status
+    // so users on free trial can upgrade their plan
     const subscriptions = await stripe.subscriptions.list({
       customer: customer.stripeCustomerId,
-      status: 'active',
-      limit: 1,
+      limit: 10,
     });
 
-    const currentSubscription = subscriptions.data[0] as import('stripe').Stripe.Subscription | undefined;
+    // Find the first active or trialing subscription
+    const currentSubscription = subscriptions.data.find((s) => s.status === 'active' || s.status === 'trialing') as
+      | import('stripe').Stripe.Subscription
+      | undefined;
+
     if (!currentSubscription) {
-      throw new Error('No active subscription found');
+      throw new Error('No active subscription found. Please subscribe first.');
     }
+
+    const isTrialing = currentSubscription.status === 'trialing';
 
     const subscriptionItemId = currentSubscription.items.data[0].id;
     const currentPriceId = currentSubscription.items.data[0].price.id;
@@ -320,12 +327,86 @@ export const updateSubscription = action({
     const isIntervalUpgrade = currentTier === newTier && currentInterval === 'month' && newInterval === 'year';
     const isIntervalDowngrade = currentTier === newTier && currentInterval === 'year' && newInterval === 'month';
 
+    // Get current user for audit logging
+    const currentUser = await ctx.runQuery(api.users.query.me);
+
+    // Helper to log audit events for billing changes
+    const logBillingAudit = async (
+      action: 'billing.plan_upgraded' | 'billing.plan_downgraded' | 'billing.subscription_updated',
+      status: 'success' | 'failure',
+      description: string,
+      metadata?: Record<string, unknown>,
+    ) => {
+      await ctx.runMutation(internal.audit.internal.mutation.logAuditEvent, {
+        organizationId: args.organizationId,
+        actorId: currentUser?._id,
+        actorExternalId: currentUser?.externalId,
+        actorEmail: currentUser?.email,
+        actorName: currentUser
+          ? [currentUser.firstName, currentUser.lastName].filter(Boolean).join(' ') || undefined
+          : undefined,
+        actorType: 'user' as const,
+        category: 'billing' as const,
+        action,
+        status,
+        targetType: 'subscription',
+        targetId: currentSubscription.id,
+        targetName: `${newTier} (${newInterval}ly)`,
+        description,
+        metadata: {
+          previousTier: currentTier,
+          previousInterval: currentInterval,
+          newTier,
+          newInterval,
+          wasTrialing: isTrialing,
+          stripeSubscriptionId: currentSubscription.id,
+          ...metadata,
+        },
+      });
+    };
+
     // 4. Apply change based on type
     if (isTierUpgrade || isIntervalUpgrade) {
       // ═══════════════════════════════════════════════════════════════
-      // UPGRADE: Immediate change, customer pays prorated difference
-      // 'always_invoice' creates and finalizes an invoice immediately
+      // UPGRADE: Behavior depends on trial status
+      // - If trialing: Keep the trial, just change the plan (trial applies to all plans)
+      // - If active: Immediate change, customer pays prorated difference
       // ═══════════════════════════════════════════════════════════════
+
+      if (isTrialing) {
+        // During trial, upgrade immediately but KEEP the trial
+        // The 14-day trial applies to all plans - user can explore freely
+        console.log(
+          `[Stripe] Upgrade during trial (keeping trial): ${currentTier}/${currentInterval} → ${newTier}/${newInterval}`,
+        );
+
+        await stripe.subscriptions.update(currentSubscription.id, {
+          items: [{ id: subscriptionItemId, price: args.priceId }],
+          proration_behavior: 'none', // No proration during trial
+          // DON'T set trial_end - keep the trial running
+        });
+
+        // Sync updated subscription data
+        await ctx.runAction(internal.billing.action.syncStripeDataForCustomer, {
+          stripeCustomerId: customer.stripeCustomerId,
+        });
+
+        // Log audit event for the upgrade during trial
+        await logBillingAudit(
+          'billing.plan_upgraded',
+          'success',
+          `Subscription upgraded from ${currentTier} (${currentInterval}ly) to ${newTier} (${newInterval}ly) during trial (trial continues)`,
+          { effectiveImmediately: true, trialContinues: true },
+        );
+
+        return {
+          success: true,
+          message: `Upgraded to ${newTier} (${newInterval}ly). Your free trial continues with the new plan!`,
+          effectiveDate: new Date().toISOString(),
+        };
+      }
+
+      // For active (paid) subscriptions, charge prorated difference
       console.log(`[Stripe] Upgrade: ${currentTier}/${currentInterval} → ${newTier}/${newInterval}`);
 
       await stripe.subscriptions.update(currentSubscription.id, {
@@ -339,6 +420,14 @@ export const updateSubscription = action({
         stripeCustomerId: customer.stripeCustomerId,
       });
 
+      // Log audit event for the upgrade
+      await logBillingAudit(
+        'billing.plan_upgraded',
+        'success',
+        `Subscription upgraded from ${currentTier} (${currentInterval}ly) to ${newTier} (${newInterval}ly)`,
+        { effectiveImmediately: true },
+      );
+
       return {
         success: true,
         message: `Upgraded to ${newTier} (${newInterval}ly). You've been charged the prorated difference.`,
@@ -346,9 +435,41 @@ export const updateSubscription = action({
       };
     } else if (isTierDowngrade || isIntervalDowngrade) {
       // ═══════════════════════════════════════════════════════════════
-      // DOWNGRADE: Scheduled at period end
-      // Customer keeps current plan until period ends
+      // DOWNGRADE: Behavior depends on trial status
+      // - If trialing: Immediate change (no money involved yet)
+      // - If active: Scheduled at period end
       // ═══════════════════════════════════════════════════════════════
+
+      if (isTrialing) {
+        // During trial, downgrade immediately since no payment has been made
+        console.log(`[Stripe] Downgrade during trial: ${currentTier}/${currentInterval} → ${newTier}/${newInterval}`);
+
+        await stripe.subscriptions.update(currentSubscription.id, {
+          items: [{ id: subscriptionItemId, price: args.priceId }],
+          proration_behavior: 'none', // No proration during trial
+        });
+
+        // Sync updated subscription data
+        await ctx.runAction(internal.billing.action.syncStripeDataForCustomer, {
+          stripeCustomerId: customer.stripeCustomerId,
+        });
+
+        // Log audit event for the downgrade during trial
+        await logBillingAudit(
+          'billing.plan_downgraded',
+          'success',
+          `Subscription changed from ${currentTier} (${currentInterval}ly) to ${newTier} (${newInterval}ly) during trial`,
+          { effectiveImmediately: true, duringTrial: true },
+        );
+
+        return {
+          success: true,
+          message: `Changed to ${newTier} (${newInterval}ly). Your trial continues with the new plan.`,
+          effectiveDate: new Date().toISOString(),
+        };
+      }
+
+      // For active (paid) subscriptions, schedule downgrade at period end
       console.log(`[Stripe] Downgrade scheduled: ${currentTier}/${currentInterval} → ${newTier}/${newInterval}`);
 
       // Release any existing schedule
@@ -391,6 +512,18 @@ export const updateSubscription = action({
 
       const effectiveDateStr: string = new Date(periodEnd * 1000).toISOString();
 
+      // Log audit event for the scheduled downgrade
+      await logBillingAudit(
+        'billing.plan_downgraded',
+        'success',
+        `Subscription downgrade from ${currentTier} (${currentInterval}ly) to ${newTier} (${newInterval}ly) scheduled for ${new Date(periodEnd * 1000).toLocaleDateString()}`,
+        {
+          effectiveImmediately: false,
+          scheduledFor: effectiveDateStr,
+          stripeScheduleId: schedule.id,
+        },
+      );
+
       return {
         success: true,
         message: `Downgrade to ${newTier} (${newInterval}ly) scheduled for ${new Date(periodEnd * 1000).toLocaleDateString()}. You'll keep your current plan until then.`,
@@ -401,6 +534,173 @@ export const updateSubscription = action({
       return {
         success: true,
         message: 'No change needed - already on this plan.',
+      };
+    }
+  },
+});
+
+/**
+ * End the free trial early and start paying immediately.
+ * For users who love the product and want to support it right away! 🚀
+ *
+ * BONUS: Remaining trial days are added to the first billing cycle!
+ * Example: 10 days remaining + yearly plan = 1 year + 10 days first cycle
+ *
+ * Optionally allows changing the plan at the same time.
+ */
+export const endTrialAndStartPaying = action({
+  args: {
+    organizationId: v.id('organizations'),
+    priceId: v.optional(v.string()), // Optional: change plan at the same time
+  },
+  returns: v.object({
+    success: v.boolean(),
+    message: v.string(),
+    bonusDays: v.optional(v.number()),
+    nextBillingDate: v.optional(v.string()),
+  }),
+  handler: async (ctx, args) => {
+    // 1. Get Stripe customer
+    type CustomerResult = { stripeCustomerId: string } | null;
+    const customer: CustomerResult = await ctx.runQuery(internal.billing.query.getStripeCustomer, {
+      organizationId: args.organizationId,
+    });
+    if (!customer) {
+      return { success: false, message: 'No billing account found' };
+    }
+
+    // 2. Get current trialing subscription
+    const subscriptions = await stripe.subscriptions.list({
+      customer: customer.stripeCustomerId,
+      limit: 10,
+    });
+
+    const currentSubscription = subscriptions.data.find((s) => s.status === 'trialing') as
+      | import('stripe').Stripe.Subscription
+      | undefined;
+
+    if (!currentSubscription) {
+      return {
+        success: false,
+        message: "You're not currently on a free trial. Your subscription is already active!",
+      };
+    }
+
+    // 3. Get current user for audit logging
+    const currentUser = await ctx.runQuery(api.users.query.me);
+
+    const currentPriceId = currentSubscription.items.data[0].price.id;
+    const currentTier = getTierFromPriceId(currentPriceId);
+    const currentInterval = getBillingIntervalFromPriceId(currentPriceId);
+
+    // Determine final plan (use new price if provided, otherwise keep current)
+    const finalPriceId = args.priceId ?? currentPriceId;
+    const finalTier = getTierFromPriceId(finalPriceId);
+    const finalInterval = getBillingIntervalFromPriceId(finalPriceId);
+    const isPlanChange = args.priceId && args.priceId !== currentPriceId;
+
+    // 4. Calculate remaining trial days as bonus
+    const nowSeconds = Math.floor(Date.now() / 1000);
+    const trialEndSeconds = currentSubscription.trial_end ?? nowSeconds;
+    const remainingTrialSeconds = Math.max(0, trialEndSeconds - nowSeconds);
+    const bonusDays = Math.ceil(remainingTrialSeconds / (24 * 60 * 60));
+
+    // Calculate billing interval in seconds
+    const intervalSeconds = finalInterval === 'year' ? 365 * 24 * 60 * 60 : 30 * 24 * 60 * 60;
+
+    // Calculate extended period end (now + bonus days + billing interval)
+    const extendedPeriodEnd = nowSeconds + remainingTrialSeconds + intervalSeconds;
+
+    try {
+      // 5. Release any existing schedule first
+      if (currentSubscription.schedule) {
+        const scheduleId =
+          typeof currentSubscription.schedule === 'string'
+            ? currentSubscription.schedule
+            : currentSubscription.schedule.id;
+        try {
+          await stripe.subscriptionSchedules.release(scheduleId);
+        } catch {
+          // Schedule might already be released, ignore
+        }
+      }
+
+      // 6. Create a subscription schedule from the current subscription
+      // This allows us to set a custom first billing period
+      const schedule = await stripe.subscriptionSchedules.create({
+        from_subscription: currentSubscription.id,
+      });
+
+      // 7. Update the schedule with an extended first phase
+      // Phase 1: Starts now, ends at (now + bonus days + billing interval)
+      // This gives them the full billing period PLUS their remaining trial days
+      await stripe.subscriptionSchedules.update(schedule.id, {
+        end_behavior: 'release', // After schedule ends, subscription continues normally
+        phases: [
+          {
+            items: [{ price: finalPriceId, quantity: 1 }],
+            start_date: nowSeconds,
+            end_date: extendedPeriodEnd,
+            proration_behavior: 'none',
+          },
+        ],
+      });
+
+      const nextBillingDate = new Date(extendedPeriodEnd * 1000).toISOString();
+
+      console.log(
+        `[Stripe] Trial ended with ${bonusDays} bonus days. Next billing: ${nextBillingDate}${isPlanChange ? ` (changed to ${finalTier}/${finalInterval})` : ''}`,
+      );
+
+      // 8. Sync updated subscription data
+      await ctx.runAction(internal.billing.action.syncStripeDataForCustomer, {
+        stripeCustomerId: customer.stripeCustomerId,
+      });
+
+      // 9. Log audit event
+      await ctx.runMutation(internal.audit.internal.mutation.logAuditEvent, {
+        organizationId: args.organizationId,
+        actorId: currentUser?._id,
+        actorExternalId: currentUser?.externalId,
+        actorEmail: currentUser?.email,
+        actorName: currentUser
+          ? [currentUser.firstName, currentUser.lastName].filter(Boolean).join(' ') || undefined
+          : undefined,
+        actorType: 'user' as const,
+        category: 'billing' as const,
+        action: 'billing.subscription_updated' as const,
+        status: 'success' as const,
+        targetType: 'subscription',
+        targetId: currentSubscription.id,
+        targetName: `${finalTier} (${finalInterval}ly)`,
+        description: `User opted out of free trial and started ${finalTier} (${finalInterval}ly) subscription with ${bonusDays} bonus days`,
+        metadata: {
+          previousTier: currentTier,
+          previousInterval: currentInterval,
+          finalTier,
+          finalInterval,
+          trialEndedEarly: true,
+          planChanged: isPlanChange,
+          bonusDays,
+          nextBillingDate,
+          stripeSubscriptionId: currentSubscription.id,
+          stripeScheduleId: schedule.id,
+        },
+      });
+
+      const intervalLabel = finalInterval === 'year' ? '1 year' : '1 month';
+
+      return {
+        success: true,
+        message: `🎉 Thank you for your support! Your ${finalTier} subscription is now active with ${bonusDays} bonus days. First billing cycle: ${intervalLabel} + ${bonusDays} days!`,
+        bonusDays,
+        nextBillingDate,
+      };
+    } catch (error) {
+      console.error('[Stripe] Failed to end trial:', error);
+      return {
+        success: false,
+        message: error instanceof Error ? error.message : 'Failed to activate subscription. Please try again.',
       };
     }
   },
@@ -796,6 +1096,248 @@ export const cancelScheduledDowngrade = action({
         message: error instanceof Error ? error.message : 'Failed to cancel scheduled change',
       };
     }
+  },
+});
+
+/**
+ * Resume a subscription that was scheduled to cancel (cancel_at_period_end = true).
+ * This keeps the subscription active past the current period.
+ *
+ * Use this when:
+ * - User canceled but subscription hasn't ended yet
+ * - User wants to undo the cancellation and continue
+ */
+export const resumeSubscription = action({
+  args: {
+    organizationId: v.id('organizations'),
+  },
+  returns: v.object({
+    success: v.boolean(),
+    message: v.string(),
+  }),
+  handler: async (ctx, args) => {
+    // 1. Get Stripe customer
+    type CustomerResult = { stripeCustomerId: string } | null;
+    const customer: CustomerResult = await ctx.runQuery(internal.billing.query.getStripeCustomer, {
+      organizationId: args.organizationId,
+    });
+    if (!customer) {
+      return { success: false, message: 'No billing account found' };
+    }
+
+    // 2. Find subscription scheduled for cancellation
+    // Include both active and trialing in case they cancel during trial
+    const subscriptions = await stripe.subscriptions.list({
+      customer: customer.stripeCustomerId,
+      limit: 10,
+    });
+
+    // Find the subscription that's scheduled to cancel
+    const subscription = subscriptions.data.find(
+      (s) => (s.status === 'active' || s.status === 'trialing') && (s.cancel_at_period_end || s.cancel_at !== null),
+    );
+
+    if (!subscription) {
+      // Check if there's an active subscription that's NOT scheduled for cancellation
+      const activeSubscription = subscriptions.data.find((s) => s.status === 'active' || s.status === 'trialing');
+
+      if (activeSubscription) {
+        return {
+          success: false,
+          message: 'Your subscription is already active and not scheduled for cancellation.',
+        };
+      }
+
+      return {
+        success: false,
+        message: 'No subscription found to resume. You may need to create a new subscription.',
+      };
+    }
+
+    try {
+      // 3. Remove the cancellation by clearing both flags
+      await stripe.subscriptions.update(subscription.id, {
+        cancel_at_period_end: false,
+        cancel_at: '', // Empty string clears the cancel_at timestamp
+      });
+
+      console.log(`[Stripe] Resumed subscription ${subscription.id} for customer ${customer.stripeCustomerId}`);
+
+      // 4. Sync the updated subscription data
+      await ctx.runAction(internal.billing.action.syncStripeDataForCustomer, {
+        stripeCustomerId: customer.stripeCustomerId,
+      });
+
+      return {
+        success: true,
+        message: 'Your subscription has been resumed. You will continue to be billed as normal.',
+      };
+    } catch (error) {
+      console.error('[Stripe] Failed to resume subscription:', error);
+      return {
+        success: false,
+        message: error instanceof Error ? error.message : 'Failed to resume subscription. Please try again.',
+      };
+    }
+  },
+});
+
+/**
+ * Create a new subscription for an organization.
+ * This is the primary way to create subscriptions after initial checkout.
+ *
+ * Behavior:
+ * - If organization has never had a subscription: Creates checkout with trial (if eligible)
+ * - If organization has used trial: Creates checkout without trial
+ * - If organization has active/trialing subscription: Throws error (use updateSubscription instead)
+ *
+ * Use this when:
+ * - User's subscription has fully ended and they want to resubscribe
+ * - User never completed the initial checkout
+ */
+type CreateNewSubscriptionResult = {
+  url: string;
+  hasTrialIncluded: boolean;
+};
+
+export const createNewSubscription = action({
+  args: {
+    organizationId: v.id('organizations'),
+    priceId: v.string(),
+    successUrl: v.string(),
+    cancelUrl: v.string(),
+  },
+  returns: v.object({
+    url: v.string(),
+    hasTrialIncluded: v.boolean(),
+  }),
+  handler: async (ctx, args): Promise<CreateNewSubscriptionResult> => {
+    // 1. Get the organization
+    const organization = await ctx.runQuery(api.organizations.query.getOrganizationById, {
+      id: args.organizationId,
+    });
+    if (!organization) {
+      throw new Error('Organization not found');
+    }
+
+    // 2. Get current user for email
+    const user = await ctx.runQuery(api.users.query.me);
+    if (!user) {
+      throw new Error('User not found');
+    }
+
+    // 3. Check if they've already used their trial
+    type TrialStatus = { hasUsedTrial?: boolean } | null;
+    const trialStatus: TrialStatus = await ctx.runQuery(internal.billing.query.getTrialStatus, {
+      organizationId: args.organizationId,
+    });
+    const hasUsedTrial: boolean = trialStatus?.hasUsedTrial ?? false;
+
+    // 4. Get or create Stripe customer
+    const existingCustomer = await ctx.runQuery(internal.billing.query.getStripeCustomer, {
+      organizationId: args.organizationId,
+    });
+
+    let stripeCustomerId: string;
+
+    if (existingCustomer) {
+      stripeCustomerId = existingCustomer.stripeCustomerId;
+    } else {
+      // Create a new Stripe customer
+      console.log(`[Stripe] Creating customer for organization ${organization.name}`);
+
+      const newCustomer = await stripe.customers.create({
+        email: user.email,
+        name: organization.name,
+        metadata: {
+          workosOrganizationId: organization.externalId,
+          organizationName: organization.name,
+        },
+      });
+
+      await ctx.runMutation(internal.billing.internal.mutation.upsertStripeCustomer, {
+        organizationId: args.organizationId,
+        stripeCustomerId: newCustomer.id,
+      });
+
+      // Sync to WorkOS
+      const workos = new WorkOS(process.env.WORKOS_API_KEY);
+      await workos.organizations.updateOrganization({
+        organization: organization.externalId,
+        stripeCustomerId: newCustomer.id,
+      });
+
+      stripeCustomerId = newCustomer.id;
+    }
+
+    // 5. Check for existing active or trialing subscription
+    const existingSubscriptions = await stripe.subscriptions.list({
+      customer: stripeCustomerId,
+      limit: 10,
+    });
+
+    const activeOrTrialing = existingSubscriptions.data.find((s) => s.status === 'active' || s.status === 'trialing');
+
+    if (activeOrTrialing) {
+      throw new Error(
+        'Organization already has an active subscription. Use updateSubscription to change plans, or cancelSubscription first.',
+      );
+    }
+
+    // 6. Create checkout session
+    // Include trial ONLY if they haven't used it before
+    const hasTrialIncluded: boolean = !hasUsedTrial;
+
+    const checkoutConfig: import('stripe').Stripe.Checkout.SessionCreateParams = {
+      customer: stripeCustomerId,
+      mode: 'subscription',
+      line_items: [{ price: args.priceId, quantity: 1 }],
+      success_url: args.successUrl,
+      cancel_url: args.cancelUrl,
+      metadata: {
+        organizationId: args.organizationId,
+        tier: getTierFromPriceId(args.priceId),
+        isResubscription: 'true',
+      },
+    };
+
+    // Add trial if eligible
+    if (hasTrialIncluded) {
+      checkoutConfig.subscription_data = {
+        trial_period_days: FREE_TRIAL_DAYS,
+        trial_settings: {
+          end_behavior: {
+            missing_payment_method: 'pause',
+          },
+        },
+        metadata: {
+          organizationId: args.organizationId,
+          tier: getTierFromPriceId(args.priceId),
+        },
+      };
+    } else {
+      checkoutConfig.subscription_data = {
+        metadata: {
+          organizationId: args.organizationId,
+          tier: getTierFromPriceId(args.priceId),
+        },
+      };
+    }
+
+    const checkout = await stripe.checkout.sessions.create(checkoutConfig);
+
+    if (!checkout.url) {
+      throw new Error('Failed to create checkout session');
+    }
+
+    console.log(
+      `[Stripe] Created checkout session for ${hasTrialIncluded ? 'new subscription with trial' : 'resubscription without trial'}`,
+    );
+
+    return {
+      url: checkout.url,
+      hasTrialIncluded,
+    };
   },
 });
 
